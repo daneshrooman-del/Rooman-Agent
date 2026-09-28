@@ -18,6 +18,8 @@ dependencies = [
     "redis>=5.0",
     "sqlmodel>=0.0.21",
     "tenacity>=8.5",
+    "pypdf>=4.0",
+    "python-multipart>=0.0.9",
     "structlog>=24.1",
 ]
 

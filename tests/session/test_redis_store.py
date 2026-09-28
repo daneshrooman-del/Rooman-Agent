@@ -149,3 +149,61 @@ async def test_persistent_connection_failure_is_wrapped_not_raised_raw() -> None
 
     with pytest.raises(SessionStoreError):
         await store.load_intake_progress("sess-7")
+
+
+async def test_get_reference_documents_returns_empty_list_when_nothing_uploaded() -> None:
+    store = _store(_FakeRedisClient())
+
+    assert await store.get_reference_documents("sess-does-not-exist") == []
+
+
+async def test_add_reference_document_round_trip() -> None:
+    client = _FakeRedisClient()
+    store = _store(client)
+
+    await store.add_reference_document("sess-8", "job description text")
+
+    assert await store.get_reference_documents("sess-8") == ["job description text"]
+
+
+async def test_add_reference_document_appends_across_multiple_uploads() -> None:
+    client = _FakeRedisClient()
+    store = _store(client)
+
+    await store.add_reference_document("sess-9", "first document")
+    await store.add_reference_document("sess-9", "second document")
+
+    assert await store.get_reference_documents("sess-9") == [
+        "first document",
+        "second document",
+    ]
+
+
+async def test_clear_reference_documents_removes_them() -> None:
+    client = _FakeRedisClient()
+    store = _store(client)
+    await store.add_reference_document("sess-10", "job description text")
+
+    await store.clear_reference_documents("sess-10")
+
+    assert await store.get_reference_documents("sess-10") == []
+
+
+async def test_add_reference_document_sets_ttl_from_settings() -> None:
+    client = _FakeRedisClient()
+    store = _store(client, ttl_seconds=999)
+
+    await store.add_reference_document("sess-11", "job description text")
+
+    assert all(ex == 999 for _, _, ex in client.set_calls)
+
+
+async def test_reference_documents_redis_failure_is_wrapped_not_raised_raw() -> None:
+    client = _FakeRedisClient(fail=True)
+    store = _store(client)
+
+    with pytest.raises(SessionStoreError):
+        await store.add_reference_document("sess-12", "text")
+
+    with pytest.raises(SessionStoreError):
+        await store.get_reference_documents("sess-12")

@@ -14,15 +14,23 @@ calling `provisioning.run_intake_session`).
 
 from __future__ import annotations
 
+import io
 import uuid
+from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pypdf import PdfReader
 from sqlalchemy.engine import Engine
 
 from trackb.api.conversation import run_conversation
 from trackb.api.deps import get_avatar_client, get_db_engine, get_livekit_admin, get_session_store
-from trackb.api.schemas import ConversationStartResponse, IntakeStartRequest, IntakeStartResponse
+from trackb.api.schemas import (
+    ConversationStartResponse,
+    IntakeStartRequest,
+    IntakeStartResponse,
+    ReferenceDocumentUploadResponse,
+)
 from trackb.api.sessions import create_session
 from trackb.config import get_settings
 from trackb.contracts.avatar_client import AvatarServiceClient
@@ -36,6 +44,11 @@ log = structlog.get_logger(__name__)
 router = APIRouter()
 
 DEFAULT_VOICE_ID = "voice-default"
+
+_PDF_EXTENSION = ".pdf"
+_PDF_CONTENT_TYPE = "application/pdf"
+_TEXT_EXTENSIONS = {".txt", ".text", ".md"}
+_SUPPORTED_TYPES_MESSAGE = "supported file types: .txt, .md, .pdf"
 
 
 @router.post("/intake/start", response_model=IntakeStartResponse)
@@ -78,6 +91,76 @@ async def start_intake(
         room_name=room.name,
         livekit_url=get_settings().livekit_url,
         token=token,
+    )
+
+
+def _extract_pdf_text(raw_bytes: bytes) -> str:
+    try:
+        reader = PdfReader(io.BytesIO(raw_bytes))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422, detail=f"could not extract text from PDF: {exc}"
+        ) from exc
+
+
+def _extract_document_text(filename: str, content_type: str, raw_bytes: bytes) -> str:
+    suffix = Path(filename).suffix.lower()
+
+    if suffix == _PDF_EXTENSION or content_type == _PDF_CONTENT_TYPE:
+        text = _extract_pdf_text(raw_bytes)
+    elif suffix in _TEXT_EXTENSIONS or content_type.startswith("text/"):
+        try:
+            text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=415, detail=f"uploaded file is not valid UTF-8 text: {exc}"
+            ) from exc
+    else:
+        raise HTTPException(
+            status_code=415,
+            detail=f"unsupported file type ({suffix or content_type or 'unknown'}); "
+            f"{_SUPPORTED_TYPES_MESSAGE}",
+        )
+
+    if not text.strip():
+        raise HTTPException(
+            status_code=422, detail="uploaded file contained no extractable text"
+        )
+    return text
+
+
+@router.post(
+    "/intake/{session_id}/documents", response_model=ReferenceDocumentUploadResponse
+)
+async def upload_reference_document(
+    session_id: str,
+    file: UploadFile = File(...),  # noqa: B008
+    session_store: RedisSessionStore = Depends(get_session_store),  # noqa: B008
+) -> ReferenceDocumentUploadResponse:
+    session = await session_store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"session not found: {session_id}")
+
+    raw_bytes = await file.read()
+    text = _extract_document_text(file.filename or "", file.content_type or "", raw_bytes)
+
+    await session_store.add_reference_document(session_id, text)
+    documents = await session_store.get_reference_documents(session_id)
+
+    log.info(
+        "reference_document_uploaded",
+        session_id=session_id,
+        filename=file.filename,
+        characters_extracted=len(text),
+        documents_count=len(documents),
+    )
+
+    return ReferenceDocumentUploadResponse(
+        session_id=session_id,
+        filename=file.filename or "",
+        characters_extracted=len(text),
+        documents_count=len(documents),
     )
 
 

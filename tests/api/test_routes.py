@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,6 +57,7 @@ class _FakeSessionStore:
 
     def __init__(self) -> None:
         self.saved: dict[str, SessionRecord] = {}
+        self.reference_documents: dict[str, list[str]] = {}
 
     async def save_session(
         self,
@@ -73,6 +75,15 @@ class _FakeSessionStore:
 
     async def get_session(self, session_id: str) -> SessionRecord | None:
         return self.saved.get(session_id)
+
+    async def add_reference_document(self, session_id: str, text: str) -> None:
+        self.reference_documents.setdefault(session_id, []).append(text)
+
+    async def get_reference_documents(self, session_id: str) -> list[str]:
+        return list(self.reference_documents.get(session_id, []))
+
+    async def clear_reference_documents(self, session_id: str) -> None:
+        self.reference_documents.pop(session_id, None)
 
 
 @pytest.fixture
@@ -293,3 +304,146 @@ def test_conversation_start_returns_503_when_livekit_room_creation_fails(
     response = client.post("/agents/agent-1/conversation/start")
 
     assert response.status_code == 503
+
+
+def _minimal_pdf_bytes(text: str) -> bytes:
+    """Build a real, minimally-valid one-page PDF containing `text`, using pypdf's own writer
+    -- proves the upload route's `pypdf.PdfReader.extract_text()` usage against real PDF bytes
+    rather than a mocked-away pypdf."""
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=300, height=300)
+
+    content = f"BT /F1 18 Tf 20 250 Td ({text}) Tj ET"
+    stream_obj = DecodedStreamObject()
+    stream_obj.set_data(content.encode("latin-1"))
+    stream_ref = writer._add_object(stream_obj)
+    page[NameObject("/Contents")] = stream_ref
+
+    font = DictionaryObject()
+    font[NameObject("/Type")] = NameObject("/Font")
+    font[NameObject("/Subtype")] = NameObject("/Type1")
+    font[NameObject("/BaseFont")] = NameObject("/Helvetica")
+    font_ref = writer._add_object(font)
+
+    resources = DictionaryObject()
+    fonts_dict = DictionaryObject()
+    fonts_dict[NameObject("/F1")] = font_ref
+    resources[NameObject("/Font")] = fonts_dict
+    page[NameObject("/Resources")] = resources
+
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
+def test_upload_reference_document_txt_succeeds_and_lands_in_store(
+    client: TestClient, fake_session_store: _FakeSessionStore
+) -> None:
+    start_response = client.post("/intake/start", json={"owner": "user-1"})
+    session_id = start_response.json()["session_id"]
+
+    response = client.post(
+        f"/intake/{session_id}/documents",
+        files={
+            "file": ("job-description.txt", b"We need a senior backend engineer.", "text/plain")
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["session_id"] == session_id
+    assert body["documents_count"] == 1
+    assert body["characters_extracted"] == len("We need a senior backend engineer.")
+    assert fake_session_store.reference_documents[session_id] == [
+        "We need a senior backend engineer."
+    ]
+
+
+def test_upload_reference_document_pdf_extracts_real_text(
+    client: TestClient, fake_session_store: _FakeSessionStore
+) -> None:
+    start_response = client.post("/intake/start", json={"owner": "user-1"})
+    session_id = start_response.json()["session_id"]
+    pdf_bytes = _minimal_pdf_bytes("Job description reference text")
+
+    response = client.post(
+        f"/intake/{session_id}/documents",
+        files={"file": ("job-description.pdf", pdf_bytes, "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["documents_count"] == 1
+    assert body["characters_extracted"] > 0
+    stored = fake_session_store.reference_documents[session_id]
+    assert len(stored) == 1
+    assert "Job description reference text" in stored[0]
+
+
+def test_upload_reference_document_unsupported_type_returns_4xx(
+    client: TestClient,
+) -> None:
+    start_response = client.post("/intake/start", json={"owner": "user-1"})
+    session_id = start_response.json()["session_id"]
+
+    response = client.post(
+        f"/intake/{session_id}/documents",
+        files={"file": ("photo.png", b"\x89PNG\r\n fake bytes", "image/png")},
+    )
+
+    assert 400 <= response.status_code < 500
+    assert response.status_code == 415
+    assert ".txt" in response.json()["detail"]
+    assert ".pdf" in response.json()["detail"]
+
+
+def test_upload_reference_document_corrupt_pdf_returns_4xx_not_500(
+    client: TestClient,
+) -> None:
+    start_response = client.post("/intake/start", json={"owner": "user-1"})
+    session_id = start_response.json()["session_id"]
+
+    response = client.post(
+        f"/intake/{session_id}/documents",
+        files={"file": ("broken.pdf", b"not actually a pdf", "application/pdf")},
+    )
+
+    assert 400 <= response.status_code < 500
+
+
+def test_upload_reference_document_nonexistent_session_returns_404(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/intake/does-not-exist/documents",
+        files={"file": ("job-description.txt", b"some text", "text/plain")},
+    )
+
+    assert response.status_code == 404
+
+
+def test_upload_reference_document_appends_across_multiple_uploads(
+    client: TestClient, fake_session_store: _FakeSessionStore
+) -> None:
+    start_response = client.post("/intake/start", json={"owner": "user-1"})
+    session_id = start_response.json()["session_id"]
+
+    first = client.post(
+        f"/intake/{session_id}/documents",
+        files={"file": ("first.txt", b"first document text", "text/plain")},
+    )
+    second = client.post(
+        f"/intake/{session_id}/documents",
+        files={"file": ("second.txt", b"second document text", "text/plain")},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["documents_count"] == 2
+    assert fake_session_store.reference_documents[session_id] == [
+        "first document text",
+        "second document text",
+    ]

@@ -124,10 +124,11 @@ class UtteranceEmittingWorker(Protocol):
 @runtime_checkable
 class IntakeProgressStore(Protocol):
     """What `IntakeSessionDriver`/`intake_entrypoint` need from a `RedisSessionStore`-shaped
-    object to load, persist, and clear intake progress. Matches the slice of
-    `RedisSessionStore`'s public API actually called here, so tests can inject a lightweight
-    fake store instead of a real Redis-backed one -- same reasoning as
-    `UtteranceEmittingWorker` above.
+    object to load, persist, and clear intake progress, plus fetch/clear any reference
+    documents (e.g. a job description) uploaded alongside the session via
+    `POST /intake/{session_id}/documents`. Matches the slice of `RedisSessionStore`'s public
+    API actually called here, so tests can inject a lightweight fake store instead of a real
+    Redis-backed one -- same reasoning as `UtteranceEmittingWorker` above.
     """
 
     async def load_intake_progress(
@@ -139,6 +140,10 @@ class IntakeProgressStore(Protocol):
     ) -> None: ...
 
     async def clear_intake_progress(self, session_id: str) -> None: ...
+
+    async def get_reference_documents(self, session_id: str) -> list[str]: ...
+
+    async def clear_reference_documents(self, session_id: str) -> None: ...
 
 
 async def _load_or_create_intake_graph(
@@ -252,19 +257,31 @@ class IntakeSessionDriver:
     async def _complete(self, result: IntakeStepResult) -> None:
         assert result.completed_slots is not None  # guaranteed by IntakeGraph on "completed"
         slots: IntakeSlots = result.completed_slots
+        reference_documents = (
+            await self._session_store.get_reference_documents(self._session_id)
+            if self._session_store is not None
+            else []
+        )
         intake_result = IntakeSessionResult(
             slots=slots,
             session_id=self._session_id,
             owner=self._owner,
+            reference_documents=reference_documents,
         )
 
-        logger.info("intake_session_completing", session_id=self._session_id, owner=self._owner)
+        logger.info(
+            "intake_session_completing",
+            session_id=self._session_id,
+            owner=self._owner,
+            reference_document_count=len(reference_documents),
+        )
         spec = await self._run_intake_session_fn(intake_result, self._avatar_assignment)
         self._provisioned_spec = spec
         self._completed = True
 
         if self._session_store is not None:
             await self._session_store.clear_intake_progress(self._session_id)
+            await self._session_store.clear_reference_documents(self._session_id)
 
         await self._session_worker.speak(CLOSING_MESSAGE)
         await self._session_worker.leave()

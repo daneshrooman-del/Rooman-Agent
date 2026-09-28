@@ -33,12 +33,18 @@ class _FakeSessionWorker:
 
 
 class _FakeIntakeProgressStore:
-    """Stands in for `RedisSessionStore`'s intake-progress slice."""
+    """Stands in for `RedisSessionStore`'s intake-progress + reference-documents slices."""
 
-    def __init__(self, existing: dict[str, tuple[IntakeSlots, list[str]]] | None = None) -> None:
+    def __init__(
+        self,
+        existing: dict[str, tuple[IntakeSlots, list[str]]] | None = None,
+        reference_documents: dict[str, list[str]] | None = None,
+    ) -> None:
         self._progress = dict(existing or {})
+        self._reference_documents = {k: list(v) for k, v in (reference_documents or {}).items()}
         self.saved_calls: list[tuple[str, IntakeSlots, list[str]]] = []
         self.cleared: list[str] = []
+        self.reference_documents_cleared: list[str] = []
 
     async def load_intake_progress(self, session_id: str) -> tuple[IntakeSlots, list[str]] | None:
         return self._progress.get(session_id)
@@ -52,6 +58,13 @@ class _FakeIntakeProgressStore:
     async def clear_intake_progress(self, session_id: str) -> None:
         self._progress.pop(session_id, None)
         self.cleared.append(session_id)
+
+    async def get_reference_documents(self, session_id: str) -> list[str]:
+        return list(self._reference_documents.get(session_id, []))
+
+    async def clear_reference_documents(self, session_id: str) -> None:
+        self._reference_documents.pop(session_id, None)
+        self.reference_documents_cleared.append(session_id)
 
 
 def _fake_agent_spec(session_id: str) -> AgentSpec:
@@ -282,6 +295,148 @@ async def test_driver_clears_progress_from_session_store_on_completion() -> None
     assert driver.completed is True
     assert progress_store.cleared == ["sess-clear"]
     assert await progress_store.load_intake_progress("sess-clear") is None
+
+
+@pytest.mark.asyncio
+async def test_reference_documents_flow_into_intake_session_result_on_completion() -> None:
+    responses: list[dict[str, object]] = [
+        {"purpose": "take HR placement calls"},
+        {"caller_persona": "HR teams"},
+        {"workflow_steps": ["confirm role", "screen candidate"]},
+        {"languages": ["en"]},
+    ]
+    llm = MockLLMProvider(extract_fn=_extract_fn_sequence(responses))
+    graph = IntakeGraph(llm)
+    worker = _FakeSessionWorker()
+    progress_store = _FakeIntakeProgressStore(
+        reference_documents={"sess-docs": ["job description text", "candidate criteria text"]}
+    )
+    provisioning_calls: list[tuple[IntakeSessionResult, AvatarAssignment]] = []
+
+    async def fake_run_intake_session(
+        intake_result: IntakeSessionResult, avatar_assignment: AvatarAssignment
+    ) -> AgentSpec:
+        provisioning_calls.append((intake_result, avatar_assignment))
+        return _fake_agent_spec(intake_result.session_id)
+
+    driver = IntakeSessionDriver(
+        session_id="sess-docs",
+        owner="owner-1",
+        intake_graph=graph,
+        session_worker=worker,
+        run_intake_session_fn=fake_run_intake_session,
+        session_store=progress_store,
+    )
+
+    utterances = [
+        "I want an agent that takes HR placement calls",
+        "HR teams will call it",
+        "confirm role, then screen candidate",
+        "just English",
+    ]
+    for text in utterances:
+        await driver.on_utterance(
+            TranscribedUtterance(session_id="sess-docs", text=text, is_final=True)
+        )
+
+    assert len(provisioning_calls) == 1
+    intake_result, _ = provisioning_calls[0]
+    assert intake_result.reference_documents == [
+        "job description text",
+        "candidate criteria text",
+    ]
+
+    # Reference documents are cleared from the store once ingested, same as intake progress.
+    assert progress_store.reference_documents_cleared == ["sess-docs"]
+    assert await progress_store.get_reference_documents("sess-docs") == []
+
+
+@pytest.mark.asyncio
+async def test_intake_session_result_has_no_reference_documents_when_none_uploaded() -> None:
+    responses: list[dict[str, object]] = [
+        {"purpose": "take HR placement calls"},
+        {"caller_persona": "HR teams"},
+        {"workflow_steps": ["confirm role", "screen candidate"]},
+        {"languages": ["en"]},
+    ]
+    llm = MockLLMProvider(extract_fn=_extract_fn_sequence(responses))
+    graph = IntakeGraph(llm)
+    worker = _FakeSessionWorker()
+    progress_store = _FakeIntakeProgressStore()
+    provisioning_calls: list[tuple[IntakeSessionResult, AvatarAssignment]] = []
+
+    async def fake_run_intake_session(
+        intake_result: IntakeSessionResult, avatar_assignment: AvatarAssignment
+    ) -> AgentSpec:
+        provisioning_calls.append((intake_result, avatar_assignment))
+        return _fake_agent_spec(intake_result.session_id)
+
+    driver = IntakeSessionDriver(
+        session_id="sess-no-docs",
+        owner="owner-1",
+        intake_graph=graph,
+        session_worker=worker,
+        run_intake_session_fn=fake_run_intake_session,
+        session_store=progress_store,
+    )
+
+    utterances = [
+        "I want an agent that takes HR placement calls",
+        "HR teams will call it",
+        "confirm role, then screen candidate",
+        "just English",
+    ]
+    for text in utterances:
+        await driver.on_utterance(
+            TranscribedUtterance(session_id="sess-no-docs", text=text, is_final=True)
+        )
+
+    assert len(provisioning_calls) == 1
+    intake_result, _ = provisioning_calls[0]
+    assert intake_result.reference_documents == []
+
+
+@pytest.mark.asyncio
+async def test_intake_session_result_has_no_reference_documents_when_no_session_store() -> None:
+    responses: list[dict[str, object]] = [
+        {"purpose": "take HR placement calls"},
+        {"caller_persona": "HR teams"},
+        {"workflow_steps": ["confirm role", "screen candidate"]},
+        {"languages": ["en"]},
+    ]
+    llm = MockLLMProvider(extract_fn=_extract_fn_sequence(responses))
+    graph = IntakeGraph(llm)
+    worker = _FakeSessionWorker()
+    provisioning_calls: list[tuple[IntakeSessionResult, AvatarAssignment]] = []
+
+    async def fake_run_intake_session(
+        intake_result: IntakeSessionResult, avatar_assignment: AvatarAssignment
+    ) -> AgentSpec:
+        provisioning_calls.append((intake_result, avatar_assignment))
+        return _fake_agent_spec(intake_result.session_id)
+
+    driver = IntakeSessionDriver(
+        session_id="sess-no-store",
+        owner="owner-1",
+        intake_graph=graph,
+        session_worker=worker,
+        run_intake_session_fn=fake_run_intake_session,
+    )
+
+    utterances = [
+        "I want an agent that takes HR placement calls",
+        "HR teams will call it",
+        "confirm role, then screen candidate",
+        "just English",
+    ]
+    for text in utterances:
+        await driver.on_utterance(
+            TranscribedUtterance(session_id="sess-no-store", text=text, is_final=True)
+        )
+
+    assert len(provisioning_calls) == 1
+    intake_result, _ = provisioning_calls[0]
+    assert intake_result.reference_documents == []
 
 
 @pytest.mark.asyncio

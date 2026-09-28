@@ -47,6 +47,7 @@ _RETRY = retry(
 
 _SESSION_KEY_PREFIX = "trackb:session:"
 _INTAKE_PROGRESS_KEY_PREFIX = "trackb:intake-progress:"
+_REFERENCE_DOCUMENTS_KEY_PREFIX = "trackb:reference-docs:"
 
 
 class SessionStoreError(Exception):
@@ -74,12 +75,24 @@ class IntakeProgress(BaseModel):
     history: list[str] = Field(default_factory=list)
 
 
+class ReferenceDocuments(BaseModel):
+    """Raw text of reference documents (e.g. a job description PDF) uploaded alongside an
+    intake session -- see `api/routes.py`'s `POST /intake/{session_id}/documents` and
+    `IntakeSessionResult.reference_documents`."""
+
+    documents: list[str] = Field(default_factory=list)
+
+
 def _session_key(session_id: str) -> str:
     return f"{_SESSION_KEY_PREFIX}{session_id}"
 
 
 def _intake_progress_key(session_id: str) -> str:
     return f"{_INTAKE_PROGRESS_KEY_PREFIX}{session_id}"
+
+
+def _reference_documents_key(session_id: str) -> str:
+    return f"{_REFERENCE_DOCUMENTS_KEY_PREFIX}{session_id}"
 
 
 class RedisSessionStore:
@@ -150,6 +163,32 @@ class RedisSessionStore:
     async def clear_intake_progress(self, session_id: str) -> None:
         await self._delete(_intake_progress_key(session_id))
         logger.info("intake_progress_cleared", session_id=session_id)
+
+    # -- reference documents -------------------------------------------------------------
+
+    async def add_reference_document(self, session_id: str, text: str) -> None:
+        """Append `text` (the plain-text extraction of one uploaded document) to the list of
+        reference documents accumulated for `session_id` so far."""
+        documents = await self.get_reference_documents(session_id)
+        documents.append(text)
+        docs = ReferenceDocuments(documents=documents)
+        await self._set(_reference_documents_key(session_id), docs.model_dump_json())
+        logger.info(
+            "reference_document_added",
+            session_id=session_id,
+            documents_count=len(documents),
+            characters=len(text),
+        )
+
+    async def get_reference_documents(self, session_id: str) -> list[str]:
+        raw = await self._get(_reference_documents_key(session_id))
+        if raw is None:
+            return []
+        return ReferenceDocuments.model_validate_json(raw).documents
+
+    async def clear_reference_documents(self, session_id: str) -> None:
+        await self._delete(_reference_documents_key(session_id))
+        logger.info("reference_documents_cleared", session_id=session_id)
 
     # -- Redis boundary: every call gets a timeout + bounded retry, wrapped into
     #    SessionStoreError so a connection failure never hangs or crashes raw ------------

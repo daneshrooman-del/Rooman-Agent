@@ -32,6 +32,13 @@ class IntakeStartResponse(BaseModel):
     token: str
 
 
+class ReferenceDocumentUploadResponse(BaseModel):
+    session_id: str
+    filename: str
+    characters_extracted: int
+    documents_count: int
+
+
 class ConversationStartResponse(BaseModel):
     session_id: str
     agent_id: str
