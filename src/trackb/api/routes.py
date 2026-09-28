@@ -21,12 +21,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Engine
 
 from trackb.api.conversation import run_conversation
-from trackb.api.deps import get_avatar_client, get_db_engine
+from trackb.api.deps import get_avatar_client, get_db_engine, get_livekit_admin
 from trackb.api.schemas import ConversationStartResponse, IntakeStartRequest, IntakeStartResponse
 from trackb.api.sessions import create_session
+from trackb.config import get_settings
 from trackb.contracts.avatar_client import AvatarServiceClient
 from trackb.contracts.models import AgentSpec
 from trackb.provisioning.store import get_agent_spec, list_agent_specs
+from trackb.session.livekit_admin import LiveKitAdmin, LiveKitAdminError
 
 log = structlog.get_logger(__name__)
 
@@ -39,6 +41,7 @@ DEFAULT_VOICE_ID = "voice-default"
 async def start_intake(
     request: IntakeStartRequest,
     avatar_client: AvatarServiceClient = Depends(get_avatar_client),  # noqa: B008
+    livekit_admin: LiveKitAdmin = Depends(get_livekit_admin),  # noqa: B008
 ) -> IntakeStartResponse:
     session_id = str(uuid.uuid4())
 
@@ -46,12 +49,30 @@ async def start_intake(
     if request.has_reference_video:
         avatar_id = await avatar_client.create_avatar(b"placeholder-reference-video")
 
+    try:
+        room = await livekit_admin.create_intake_room(session_id)
+        token = await livekit_admin.mint_join_token(room.name, identity=request.owner)
+    except LiveKitAdminError as exc:
+        log.error(
+            "session_start_failed", session_id=session_id, owner=request.owner, error=str(exc)
+        )
+        raise HTTPException(
+            status_code=503, detail=f"failed to provision LiveKit room: {exc}"
+        ) from exc
+
     create_session(
         session_id, owner=request.owner, avatar_id=avatar_id, voice_id=DEFAULT_VOICE_ID
     )
-    log.info("session_start", session_id=session_id, owner=request.owner)
+    log.info("session_start", session_id=session_id, owner=request.owner, room_name=room.name)
 
-    return IntakeStartResponse(session_id=session_id, owner=request.owner, avatar_id=avatar_id)
+    return IntakeStartResponse(
+        session_id=session_id,
+        owner=request.owner,
+        avatar_id=avatar_id,
+        room_name=room.name,
+        livekit_url=get_settings().livekit_url,
+        token=token,
+    )
 
 
 @router.get("/agents/{agent_id}", response_model=AgentSpec)

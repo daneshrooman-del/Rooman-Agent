@@ -27,6 +27,9 @@ class IntakeStartResponse(BaseModel):
     owner: str
     avatar_id: str | None = None
     status: Literal["started"] = "started"
+    room_name: str
+    livekit_url: str
+    token: str
 
 
 class ConversationStartResponse(BaseModel):
