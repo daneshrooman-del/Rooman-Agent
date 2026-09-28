@@ -15,6 +15,12 @@ class Settings(BaseSettings):
 
     whisper_model_size: str = "base"
 
+    tts_voice_model_path: str = ""
+    """Path to a downloaded Piper `.onnx` voice model file (its `.onnx.json` config must sit
+    alongside it). Empty means no real voice model is configured -- callers fall back to
+    `MockTTSProvider` rather than constructing `PiperTTSProvider` against a path that doesn't
+    exist. See `trackb.tts.piper_tts`'s module docstring for how to obtain one."""
+
     avatar_service_url: str = "http://localhost:8100"
 
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"

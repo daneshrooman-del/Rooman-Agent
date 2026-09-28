@@ -15,6 +15,8 @@ B = this one, C = platform/API/front-end) that combine only through the contract
 - **Language**: Python 3.10+ (the dev machine has 3.10 installed; code should not rely on 3.11-only syntax)
 - **Real-time transport**: LiveKit Agents SDK (self-hosted LiveKit server)
 - **STT**: faster-whisper, self-hosted, streaming
+- **TTS**: abstracted behind a `TTSProvider` protocol in `tts/`, backed by Piper
+  (`piper-tts`, self-hosted, ONNX-based) — same no-paid-vendor-API bar as STT
 - **LLM**: abstracted behind an `LLMProvider` protocol in `llm/` — never hardcode a specific
   vendor/model anywhere else in the codebase; the concrete LLM/hosting choice is being decided
   outside this track and will be wired in later as a config value
@@ -30,6 +32,7 @@ src/trackb/
   config.py        # pydantic-settings, all config from env, no hardcoded secrets
   session/          # LiveKit agent worker: joins a room, wires audio in/out
   stt/              # faster-whisper wrapped to LiveKit's STT plugin interface
+  tts/              # TTSProvider protocol + the Piper-backed implementation
   llm/              # LLMProvider protocol + the swappable backend behind it
   intake/           # slot schema (Pydantic) + LangGraph state graph
   flowgen/          # turns filled slots into a FlowGraph (states/objectives/transitions)

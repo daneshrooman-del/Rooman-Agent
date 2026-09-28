@@ -35,8 +35,11 @@ from trackb.provisioning.orchestrator import run_intake_session
 from trackb.session.concurrency import SessionConcurrencyGuard
 from trackb.session.livekit_admin import session_id_from_room_name
 from trackb.session.room_client import LiveKitRoomClient
-from trackb.session.worker import SessionWorker, TranscribedUtterance
+from trackb.session.worker import SessionWorker, TextToSpeechFn, TranscribedUtterance
 from trackb.stt.whisper_stt import WhisperSTT
+from trackb.tts.base import TTSProvider
+from trackb.tts.mock import MockTTSProvider
+from trackb.tts.piper_tts import PiperTTSProvider
 
 logger = structlog.get_logger(__name__)
 
@@ -60,16 +63,33 @@ avatar_id/voice_id pair) doesn't exist yet -- see `AvatarAssignment`'s own docst
 """
 
 
-async def _placeholder_tts(text: str) -> bytes:
-    """Stand-in `TextToSpeechFn` for `SessionWorker` until real TTS is wired up.
+def _build_tts_provider(settings: Settings) -> TTSProvider:
+    """`PiperTTSProvider` if a real voice model is configured, `MockTTSProvider` otherwise.
 
-    Real TTS integration (Track A's avatar-service `generate()`, or a dedicated TTS provider)
-    is a separate concern from this task. This logs what would have been spoken and returns
-    empty audio so `SessionWorker.speak()` has something to publish without raising, rather
-    than leaving the intake conversation unable to ask follow-up questions at all.
+    Mirrors how `IntakeGraph` defaults to `MockLLMProvider()` until a real LLM backend is
+    wired in via config: the concrete choice here is a config value
+    (`Settings.tts_voice_model_path`), not something this module hardcodes.
     """
-    logger.info("tts_placeholder_speak", text=text)
-    return b""
+    if settings.tts_voice_model_path:
+        return PiperTTSProvider(settings=settings)
+    logger.warning("tts_voice_model_not_configured", fallback="MockTTSProvider")
+    return MockTTSProvider()
+
+
+def _make_tts_fn(provider: TTSProvider, voice_id: str | None) -> TextToSpeechFn:
+    """Adapt a `TTSProvider` (which takes `voice_id` per call) to `SessionWorker`'s
+    `TextToSpeechFn` (`Callable[[str], Awaitable[bytes]]`, text only).
+
+    `voice_id` is closed over at construction time rather than threaded through `speak()`'s
+    signature, since `SessionWorker`/`IntakeSessionDriver` only ever know one voice per session
+    -- currently always `_UNASSIGNED_AVATAR.voice_id` ("unassigned") until a real
+    avatar/voice-assignment flow exists (see `_UNASSIGNED_AVATAR`'s docstring above).
+    """
+
+    async def _tts(text: str) -> bytes:
+        return await provider.synthesize(text, voice_id=voice_id)
+
+    return _tts
 
 
 RunIntakeSessionFn = Callable[[IntakeSessionResult, AvatarAssignment], Awaitable[AgentSpec]]
@@ -219,13 +239,14 @@ async def intake_entrypoint(ctx: JobContext) -> None:
     room_client = LiveKitRoomClient(ctx.room)
     stt = WhisperSTT(settings=settings)
     guard = SessionConcurrencyGuard(settings=settings)
+    tts_provider = _build_tts_provider(settings)
     session_worker = SessionWorker(
         session_id=session_id,
         room_client=room_client,
         stt=stt,
         guard=guard,
         settings=settings,
-        tts=_placeholder_tts,
+        tts=_make_tts_fn(tts_provider, _UNASSIGNED_AVATAR.voice_id),
     )
 
     intake_graph = IntakeGraph(MockLLMProvider())
