@@ -1,0 +1,11 @@
+.venvs/
+third_party/
+models/
+data/
+samples/*.mp4
+samples/*.wav
+samples/*.png
+samples/*.jpg
+__pycache__/
+*.egg-info/
+.pytest_cache/

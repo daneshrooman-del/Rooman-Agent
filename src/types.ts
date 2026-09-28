@@ -36,6 +36,8 @@ export interface Avatar {
   primary?: boolean
   usage: { videos: number; agents: number; liveSessions: number }
   languages: string[]
+  /** true when this avatar is a real digital twin trained by the avatar engine */
+  engine?: boolean
 }
 
 export interface Video {

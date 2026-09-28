@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avatar-engine"
+version = "0.1.0"
+description = "Track A: reference video -> reusable digital twin -> consistent talking videos"
+requires-python = ">=3.10"
+
+[project.scripts]
+avatar-engine = "avatar_engine.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["avatar_engine*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not e2e'"
+markers = ["e2e: runs the real models (slow, needs setup.py to have completed)"]

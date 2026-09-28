@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
+import { engine, engineEnabled, engineSupports, engineSupportsLanguage } from '@/lib/avatarEngine'
 import { useWorkspace } from '@/state/workspace'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useOnline } from '@/hooks/useOnline'
@@ -46,6 +47,10 @@ export default function CreateVideoPage() {
   // workspace mutators change identity on every data change — keep a stable handle
   const update = useRef(updateVideo)
   update.current = updateVideo
+  // Real render via the avatar engine (only for twins it trained); demo avatars keep the simulation.
+  const enginePoll = useRef<number | undefined>(undefined)
+  const [engineRun, setEngineRun] = useState(false)
+  useEffect(() => () => window.clearInterval(enginePoll.current), [])
 
   const avatar = avatarById(s.avatarId)
   const video = data?.videos.find((v) => v.id === videoId)
@@ -83,20 +88,95 @@ export default function CreateVideoPage() {
 
   // Mirror job progress into the workspace video so the library shows it live
   useEffect(() => {
-    if (!videoId || job.state !== 'running') return
+    if (!videoId || job.state !== 'running' || engineRun) return
     update.current(videoId, { progress: job.progress })
-  }, [job.progress, job.state, videoId])
+  }, [job.progress, job.state, videoId, engineRun])
 
   useEffect(() => {
-    if (job.state !== 'done' || !videoId || phase !== 'generating') return
+    if (job.state !== 'done' || !videoId || phase !== 'generating' || engineRun) return
     update.current(videoId, { status: 'ready', progress: 100, durationSec: estimate, consistencyVerified: true })
     setPhase('ready')
     toast({ title: 'Your video is ready', description: `${avatar?.name ?? 'Your avatar'} passed the identity consistency check.` })
-  }, [job.state, videoId, phase, estimate, avatar?.name, toast])
+  }, [job.state, videoId, phase, estimate, avatar?.name, toast, engineRun])
+
+  /** Real render: the engine speaks the script in the twin's cloned voice and animates the twin. */
+  async function generateReal() {
+    if (!engineSupports(s.action)) {
+      toast({ title: 'Not available yet', description: 'Your digital twin can Talk and Greet today — gesture, walk and demonstrate need a body-motion model.', tone: 'info' })
+      return
+    }
+    if (!engineSupportsLanguage(s.language)) {
+      toast({ title: `${s.language} voice isn't supported yet`, description: 'The voice model supports English, Hindi, Spanish, French, German, Arabic and more.', tone: 'info' })
+      return
+    }
+    try {
+      const j = await engine.generate(s.avatarId, { script: s.prompt.trim(), action: s.action, language: s.language })
+      const v = {
+        id: j.job_id,
+        title: s.prompt.trim().split(/[.!?]/)[0].slice(0, 48) || 'Untitled video',
+        avatarId: s.avatarId,
+        voiceId: s.voiceId,
+        prompt: s.prompt.trim(),
+        action: s.action,
+        scene: s.scene,
+        aspect: s.aspect,
+        language: s.language,
+        durationSec: 0,
+        status: 'generating' as const,
+        progress: 0,
+        createdAt: new Date().toISOString(),
+      }
+      addVideo(v)
+      setVideoId(v.id)
+      setEngineRun(true)
+      setPhase('generating')
+      job.setState('running')
+      job.setProgress(2)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      enginePoll.current = window.setInterval(async () => {
+        try {
+          const snap = await engine.job(v.id)
+          const p = engine.videoPatch(snap)
+          update.current(v.id, p)
+          if (snap.status === 'done') {
+            window.clearInterval(enginePoll.current)
+            job.setProgress(100)
+            job.setState('done')
+            setPhase('ready')
+            toast(
+              snap.consistency?.verdict === 'verified'
+                ? { title: 'Your video is ready', description: `${avatar?.name ?? 'Your avatar'} passed the identity consistency check.` }
+                : { title: 'Your video is ready — review needed', description: snap.consistency?.reason ?? 'Some frames drifted from the reference identity.', tone: 'info' },
+            )
+          } else if (snap.status === 'failed' || snap.status === 'rejected') {
+            window.clearInterval(enginePoll.current)
+            job.reset()
+            setPhase('idle')
+            setEngineRun(false)
+            toast({ title: snap.status === 'rejected' ? 'Rejected by the identity check' : 'Generation failed', description: snap.error ?? 'Please try again.', tone: 'error' })
+          } else {
+            job.setProgress(Math.max(2, p.progress ?? 0))
+          }
+        } catch {
+          /* transient — keep polling */
+        }
+      }, 2000)
+    } catch (e) {
+      toast({ title: 'Could not start generation', description: e instanceof Error ? e.message : 'Please try again.', tone: 'error' })
+    }
+  }
 
   const generate = useCallback(async () => {
     if (!promptOk || !online || submitting) return
     setSubmitting(true)
+    if (engineEnabled && avatar?.engine) {
+      try {
+        await generateReal()
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
     try {
       const v = await api.generateVideo({
         avatarId: s.avatarId,
@@ -117,9 +197,13 @@ export default function CreateVideoPage() {
     } finally {
       setSubmitting(false)
     }
-  }, [promptOk, online, submitting, s, addVideo, job, toast])
+    // generateReal is recreated each render and reads the same state
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promptOk, online, submitting, s, addVideo, job, toast, avatar?.engine])
 
   const cancel = () => {
+    window.clearInterval(enginePoll.current)
+    setEngineRun(false)
     job.reset()
     if (videoId) removeVideo(videoId)
     setVideoId(null)
@@ -163,7 +247,7 @@ export default function CreateVideoPage() {
           <h1 className="text-[28px] font-semibold leading-[1.1] sm:text-[34px]">Create a video</h1>
           <p className="mt-2 text-[15px] text-fg-muted">Direct {avatar?.name ?? 'your avatar'} with a sentence — same face, same voice, every time.</p>
         </div>
-        {isDemo && <DemoNote className="mt-2 sm:mt-0">Rendering is simulated in demo mode.</DemoNote>}
+        {isDemo && !(engineEnabled && avatar?.engine) && <DemoNote className="mt-2 sm:mt-0">Rendering is simulated in demo mode.</DemoNote>}
       </header>
 
       <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(380px,420px)_minmax(0,1fr)] lg:gap-6 xl:grid-cols-[440px_minmax(0,1fr)]">

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, Info } from 'lucide-react'
 import type { Avatar } from '@/types'
 import { api } from '@/lib/api'
+import { engine, engineEnabled } from '@/lib/avatarEngine'
 import { useWorkspace } from '@/state/workspace'
 import { useSimulatedJob } from '@/hooks/useSimulatedJob'
 import { DemoNote, ErrorState, ProgressBar, StageList } from '@/components/ui/States'
@@ -36,10 +37,45 @@ export function ProcessingStep({
   const started = useRef(false)
   const finished = useRef(false)
   const doneTimer = useRef<number | undefined>(undefined)
-  const { start } = job
+  const poll = useRef<number | undefined>(undefined)
+  const { start, setProgress, setState } = job
+  // A real upload + a configured engine trains an actual digital twin; otherwise the demo simulation runs.
+  const real = engineEnabled && source.kind === 'file'
+
+  const beginReal = useCallback(async (file: File) => {
+    const a = await engine.createAvatar(name.trim(), file)
+    setAvatar(a)
+    addAvatar(a)
+    setState('running')
+    setProgress(2)
+    const tick = async () => {
+      try {
+        const s = await engine.avatarStatus(a.id)
+        updateAvatar(a.id, { status: s.status, trainingProgress: s.trainingProgress, thumbnailUrl: s.thumbnailUrl })
+        if (s.status === 'failed') {
+          window.clearInterval(poll.current)
+          setError(s.error ?? 'Training failed')
+        } else if (s.status === 'ready') {
+          window.clearInterval(poll.current)
+          setAvatar((prev) => (prev ? { ...prev, thumbnailUrl: s.thumbnailUrl } : prev))
+          setProgress(100)
+          setState('done')
+        } else {
+          setProgress(Math.max(2, s.trainingProgress ?? 0))
+        }
+      } catch {
+        /* transient — keep polling */
+      }
+    }
+    poll.current = window.setInterval(() => void tick(), 2000)
+  }, [name, addAvatar, updateAvatar, setProgress, setState])
 
   const begin = useCallback(() => {
     setError(null)
+    if (real && source.kind === 'file') {
+      beginReal(source.file).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Upload failed'))
+      return
+    }
     api
       .createAvatar({ name: name.trim(), file: source.kind === 'file' ? source.file : null, consent: true })
       .then((a) => {
@@ -49,7 +85,7 @@ export function ProcessingStep({
         start()
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Upload failed'))
-  }, [name, source, start, addAvatar, updateAvatar])
+  }, [name, source, start, addAvatar, updateAvatar, real, beginReal])
 
   useEffect(() => {
     if (started.current) return
@@ -66,7 +102,10 @@ export function ProcessingStep({
     doneTimer.current = window.setTimeout(() => onDone({ ...avatar, ...ready }), 900)
   }, [job.state, avatar, updateAvatar, onDone])
 
-  useEffect(() => () => window.clearTimeout(doneTimer.current), [])
+  useEffect(() => () => {
+    window.clearTimeout(doneTimer.current)
+    window.clearInterval(poll.current)
+  }, [])
 
   if (error) {
     return (
@@ -105,9 +144,9 @@ export function ProcessingStep({
           <div className="flex items-end justify-between gap-4">
             <span className="tabular text-gradient text-[56px] font-semibold leading-none tracking-[-0.04em]">{job.progress}%</span>
             <span className="tabular pb-1 text-right text-[12px] text-fg-subtle">
-              Elapsed {secs(elapsed)}
+              {real ? TRAINING_STAGES[job.stage] : `Elapsed ${secs(elapsed)}`}
               <br />
-              {done ? 'Finishing up' : `About ${secs(DURATION_MS - elapsed)} remaining`}
+              {done ? 'Finishing up' : real ? 'Usually 2–6 min on a local GPU' : `About ${secs(DURATION_MS - elapsed)} remaining`}
             </span>
           </div>
           <ProgressBar value={job.progress} label="Avatar training progress" className="mt-4 h-2" />
@@ -127,7 +166,7 @@ export function ProcessingStep({
           </Link>
         </div>
 
-        {isDemo && <DemoNote className="mt-5">Training is simulated and accelerated in demo mode.</DemoNote>}
+        {isDemo && !real && <DemoNote className="mt-5">Training is simulated and accelerated in demo mode.</DemoNote>}
       </div>
     </section>
   )

@@ -1,0 +1,11 @@
+# Orchestrator env: ingestion, identity/consistency, API. No torch here.
+numpy>=1.24,<2
+mediapipe==0.10.14
+imageio-ffmpeg>=0.5
+soundfile>=0.12
+scipy>=1.10
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+pytest>=8
+httpx>=0.27
