@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     llm_provider: str = "mock"
+    """"mock" (default, no real backend) or "gemini". The concrete LLM choice is otherwise
+    kept out of this track's code -- everything depends on the `LLMProvider` protocol -- but
+    a factory has to read *some* config value to pick a concrete implementation somewhere,
+    and this is it."""
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-flash-latest"
 
     max_concurrent_sessions: int = 10
     session_init_timeout_seconds: float = 15.0

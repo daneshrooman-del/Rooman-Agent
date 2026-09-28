@@ -29,7 +29,7 @@ from trackb.config import Settings, get_settings
 from trackb.contracts.models import AgentSpec
 from trackb.intake.graph import IntakeGraph, IntakeStepResult
 from trackb.intake.schema import IntakeSlots
-from trackb.llm.mock import MockLLMProvider
+from trackb.llm.factory import build_llm_provider
 from trackb.provisioning.interfaces import AvatarAssignment, IntakeSessionResult
 from trackb.provisioning.orchestrator import run_intake_session
 from trackb.session.concurrency import SessionConcurrencyGuard
@@ -66,9 +66,9 @@ avatar_id/voice_id pair) doesn't exist yet -- see `AvatarAssignment`'s own docst
 def _build_tts_provider(settings: Settings) -> TTSProvider:
     """`PiperTTSProvider` if a real voice model is configured, `MockTTSProvider` otherwise.
 
-    Mirrors how `IntakeGraph` defaults to `MockLLMProvider()` until a real LLM backend is
-    wired in via config: the concrete choice here is a config value
-    (`Settings.tts_voice_model_path`), not something this module hardcodes.
+    Mirrors `build_llm_provider`'s config-driven backend selection for `IntakeGraph`: the
+    concrete choice here is a config value (`Settings.tts_voice_model_path`), not something
+    this module hardcodes.
     """
     if settings.tts_voice_model_path:
         return PiperTTSProvider(settings=settings)
@@ -251,7 +251,7 @@ async def intake_entrypoint(ctx: JobContext) -> None:
         tts=_make_tts_fn(tts_provider, _UNASSIGNED_AVATAR.voice_id),
     )
 
-    intake_graph = IntakeGraph(MockLLMProvider())
+    intake_graph = IntakeGraph(build_llm_provider(settings))
     driver = IntakeSessionDriver(
         session_id=session_id,
         owner=owner,

@@ -33,7 +33,7 @@ from livekit.agents import JobContext, WorkerOptions, cli
 
 from trackb.config import Settings, get_settings
 from trackb.contracts.models import AgentSpec
-from trackb.llm.mock import MockLLMProvider
+from trackb.llm.factory import build_llm_provider
 from trackb.provisioning.store import get_agent_spec
 from trackb.session.concurrency import SessionConcurrencyGuard
 from trackb.session.entrypoint import UtteranceEmittingWorker, _build_tts_provider, _make_tts_fn
@@ -197,7 +197,7 @@ async def conversation_entrypoint(ctx: JobContext) -> None:
         tts=_make_tts_fn(tts_provider, agent_spec.voice_id),
     )
 
-    flow_driver = FlowGraphDriver(agent_spec, MockLLMProvider())
+    flow_driver = FlowGraphDriver(agent_spec, build_llm_provider(settings))
     driver = ConversationSessionDriver(
         session_id=session_id,
         agent_id=agent_spec.agent_id,
