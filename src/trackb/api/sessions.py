@@ -1,44 +1,34 @@
-"""In-memory registry of started intake sessions.
+"""Session metadata persistence for `POST /intake/start`.
 
-This is a placeholder for the Redis-backed, resumable session-state store
-that the `session/` track is building (so a dropped WebRTC connection can
-resume mid-intake instead of restarting). It exists only so `POST
-/intake/start` has somewhere to record the session_id/avatar assignment it
-hands back. Swap this module out once `trackb.session` provides the real
-store -- do not build further functionality on top of this dict.
+Thin, FastAPI-route-facing wrapper around `trackb.session.redis_store.RedisSessionStore` --
+kept as its own module so `api/routes.py` doesn't need to import `redis_store` directly and so
+the public names `create_session`/`get_session` that `start_intake` already called stay stable.
+
+This used to be a bare in-memory `dict[str, IntakeSessionRecord]` (see git history), explicitly
+flagged as a placeholder for the Redis-backed, resumable store the `session/` track was
+building. That store now exists (`RedisSessionStore`); this module just calls into it.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from trackb.session.redis_store import RedisSessionStore, SessionRecord
+
+IntakeSessionRecord = SessionRecord
+"""Backward-compatible alias for the name this module used to export."""
 
 
-@dataclass
-class IntakeSessionRecord:
-    session_id: str
-    owner: str
-    avatar_id: str | None = None
-    voice_id: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-_SESSIONS: dict[str, IntakeSessionRecord] = {}
-
-
-def create_session(
+async def create_session(
+    store: RedisSessionStore,
     session_id: str,
     *,
     owner: str,
     avatar_id: str | None = None,
     voice_id: str | None = None,
-) -> IntakeSessionRecord:
-    record = IntakeSessionRecord(
-        session_id=session_id, owner=owner, avatar_id=avatar_id, voice_id=voice_id
+) -> SessionRecord:
+    return await store.save_session(
+        session_id, owner=owner, avatar_id=avatar_id, voice_id=voice_id
     )
-    _SESSIONS[session_id] = record
-    return record
 
 
-def get_session(session_id: str) -> IntakeSessionRecord | None:
-    return _SESSIONS.get(session_id)
+async def get_session(store: RedisSessionStore, session_id: str) -> SessionRecord | None:
+    return await store.get_session(session_id)

@@ -10,10 +10,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
 from trackb.api.app import create_app
-from trackb.api.deps import get_db_engine, get_livekit_admin
+from trackb.api.deps import get_db_engine, get_livekit_admin, get_session_store
 from trackb.contracts.models import AgentSpec, FlowGraph, FlowState
 from trackb.provisioning.store import get_engine, save_agent_spec
 from trackb.session.livekit_admin import LiveKitAdminError
+from trackb.session.redis_store import SessionRecord
 
 
 class _FakeLiveKitAdmin:
@@ -50,6 +51,30 @@ class _FakeLiveKitAdmin:
         return f"fake-jwt-for-{identity}"
 
 
+class _FakeSessionStore:
+    """Stands in for `RedisSessionStore`, mocking the boundary to a real Redis server."""
+
+    def __init__(self) -> None:
+        self.saved: dict[str, SessionRecord] = {}
+
+    async def save_session(
+        self,
+        session_id: str,
+        *,
+        owner: str,
+        avatar_id: str | None = None,
+        voice_id: str | None = None,
+    ) -> SessionRecord:
+        record = SessionRecord(
+            session_id=session_id, owner=owner, avatar_id=avatar_id, voice_id=voice_id
+        )
+        self.saved[session_id] = record
+        return record
+
+    async def get_session(self, session_id: str) -> SessionRecord | None:
+        return self.saved.get(session_id)
+
+
 @pytest.fixture
 def test_engine(tmp_path: Path) -> Engine:
     db_path = tmp_path / "api_test.db"
@@ -62,10 +87,20 @@ def fake_livekit_admin() -> _FakeLiveKitAdmin:
 
 
 @pytest.fixture
-def client(test_engine: Engine, fake_livekit_admin: _FakeLiveKitAdmin) -> Iterator[TestClient]:
+def fake_session_store() -> _FakeSessionStore:
+    return _FakeSessionStore()
+
+
+@pytest.fixture
+def client(
+    test_engine: Engine,
+    fake_livekit_admin: _FakeLiveKitAdmin,
+    fake_session_store: _FakeSessionStore,
+) -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[get_db_engine] = lambda: test_engine
     app.dependency_overrides[get_livekit_admin] = lambda: fake_livekit_admin
+    app.dependency_overrides[get_session_store] = lambda: fake_session_store
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -127,6 +162,19 @@ def test_intake_start_with_reference_video_creates_stub_avatar(client: TestClien
     body = response.json()
     assert body["avatar_id"] is not None
     assert body["avatar_id"].startswith("stub-avatar-")
+
+
+def test_intake_start_persists_session_metadata_to_session_store(
+    client: TestClient, fake_session_store: _FakeSessionStore
+) -> None:
+    response = client.post("/intake/start", json={"owner": "user-1"})
+
+    assert response.status_code == 200
+    session_id = response.json()["session_id"]
+
+    saved = fake_session_store.saved[session_id]
+    assert saved.owner == "user-1"
+    assert saved.voice_id == "voice-default"
 
 
 def test_intake_start_creates_livekit_room_and_join_token(

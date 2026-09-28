@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Engine
 
 from trackb.api.conversation import run_conversation
-from trackb.api.deps import get_avatar_client, get_db_engine, get_livekit_admin
+from trackb.api.deps import get_avatar_client, get_db_engine, get_livekit_admin, get_session_store
 from trackb.api.schemas import ConversationStartResponse, IntakeStartRequest, IntakeStartResponse
 from trackb.api.sessions import create_session
 from trackb.config import get_settings
@@ -29,6 +29,7 @@ from trackb.contracts.avatar_client import AvatarServiceClient
 from trackb.contracts.models import AgentSpec
 from trackb.provisioning.store import get_agent_spec, list_agent_specs
 from trackb.session.livekit_admin import LiveKitAdmin, LiveKitAdminError
+from trackb.session.redis_store import RedisSessionStore
 
 log = structlog.get_logger(__name__)
 
@@ -42,6 +43,7 @@ async def start_intake(
     request: IntakeStartRequest,
     avatar_client: AvatarServiceClient = Depends(get_avatar_client),  # noqa: B008
     livekit_admin: LiveKitAdmin = Depends(get_livekit_admin),  # noqa: B008
+    session_store: RedisSessionStore = Depends(get_session_store),  # noqa: B008
 ) -> IntakeStartResponse:
     session_id = str(uuid.uuid4())
 
@@ -60,8 +62,12 @@ async def start_intake(
             status_code=503, detail=f"failed to provision LiveKit room: {exc}"
         ) from exc
 
-    create_session(
-        session_id, owner=request.owner, avatar_id=avatar_id, voice_id=DEFAULT_VOICE_ID
+    await create_session(
+        session_store,
+        session_id,
+        owner=request.owner,
+        avatar_id=avatar_id,
+        voice_id=DEFAULT_VOICE_ID,
     )
     log.info("session_start", session_id=session_id, owner=request.owner, room_name=room.name)
 

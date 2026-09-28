@@ -13,6 +13,7 @@ from trackb.config import get_settings
 from trackb.contracts.avatar_client import AvatarServiceClient, StubAvatarServiceClient
 from trackb.provisioning.store import get_engine
 from trackb.session.livekit_admin import LiveKitAdmin
+from trackb.session.redis_store import RedisSessionStore
 
 log = structlog.get_logger(__name__)
 
@@ -67,3 +68,30 @@ async def get_livekit_admin() -> LiveKitAdmin:
                         "TRACKB_LIVEKIT_API_SECRET / TRACKB_LIVEKIT_URL)",
                     ) from exc
     return _livekit_admin
+
+
+_session_store: RedisSessionStore | None = None
+_session_store_lock = asyncio.Lock()
+
+
+async def get_session_store() -> RedisSessionStore:
+    """Default Redis-backed session-store dependency, lazily constructed as a process-wide
+    singleton.
+
+    Same reasoning as `get_livekit_admin` above: `RedisSessionStore` holds a real
+    `redis.asyncio.Redis` client, and FastAPI runs sync dependencies in a threadpool off the
+    request's event loop, which is the wrong loop for an async client to be bound to. Being
+    `async def` and lock-guarded keeps construction on the event loop that will actually use
+    it, and keeps two concurrent first-callers from racing to build two separate clients.
+
+    Unlike `get_livekit_admin`, `RedisSessionStore.__init__`/`Redis.from_url` don't do any I/O
+    (the redis-py async client connects lazily on first command), so there's nothing to catch
+    into a 503 here -- a real connection failure surfaces later, from an actual store call, as
+    a `SessionStoreError` (see `redis_store.py`).
+    """
+    global _session_store
+    if _session_store is None:
+        async with _session_store_lock:
+            if _session_store is None:
+                _session_store = RedisSessionStore()
+    return _session_store

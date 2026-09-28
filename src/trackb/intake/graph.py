@@ -120,10 +120,19 @@ class IntakeGraph:
     `IntakeStepResult` -- never a full-transcript batch call.
     """
 
-    def __init__(self, llm: LLMProvider, initial_slots: IntakeSlots | None = None) -> None:
+    def __init__(
+        self,
+        llm: LLMProvider,
+        initial_slots: IntakeSlots | None = None,
+        initial_history: list[str] | None = None,
+    ) -> None:
+        """`initial_slots`/`initial_history` let a caller rehydrate a graph that already has
+        accumulated state -- e.g. `session/entrypoint.py` resuming a dropped intake session
+        from `RedisSessionStore.load_intake_progress()` instead of starting blank. Both default
+        to an empty conversation when omitted, same as before."""
         self._llm = llm
         self._slots = initial_slots or IntakeSlots()
-        self._history: list[str] = []
+        self._history: list[str] = list(initial_history) if initial_history else []
         self._compiled = self._build_graph()
 
     @property

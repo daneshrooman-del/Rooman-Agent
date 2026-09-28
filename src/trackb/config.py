@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
 
     redis_url: str = "redis://localhost:6379/0"
+    session_state_ttl_seconds: int = 6 * 60 * 60
+    """How long session metadata and in-progress intake state (slots + utterance history) live
+    in Redis before expiring. A session shouldn't live forever if the caller abandons it mid-
+    intake and never resumes -- 6 hours is generous enough to cover a real disconnect/resume
+    without leaving stale state around indefinitely. Completed intake progress is cleared
+    explicitly (see `RedisSessionStore.clear_intake_progress`) well before this TTL would ever
+    matter for the happy path; this TTL is what bounds the abandoned-session case."""
     database_url: str = "sqlite:///./trackb.db"
 
     whisper_model_size: str = "base"

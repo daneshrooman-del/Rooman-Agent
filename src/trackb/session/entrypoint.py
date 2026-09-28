@@ -14,6 +14,17 @@ into `IntakeSessionDriver` rather than inlined in `intake_entrypoint`, so it's u
 against fakes (`FakeSessionWorker`-shaped objects, a fake `IntakeGraph`, a fake
 `run_intake_session`) without needing a real `JobContext`/`rtc.Room` -- see
 `tests/session/test_entrypoint.py`.
+
+Resuming a dropped session: `IntakeGraph`'s accumulated state (`IntakeSlots` + utterance
+history) is persisted to `RedisSessionStore` after every turn (`IntakeSessionDriver`'s
+`on_utterance`) and cleared once intake completes. `_load_or_create_intake_graph` is what
+`intake_entrypoint` calls at startup to check for prior progress under this job's `session_id`
+and rehydrate `IntakeGraph` from it -- rather than starting a blank conversation -- when
+found. This is what LiveKit's own job-dispatch `resuming` flag is for: when a worker
+reconnects after a drop, the framework can redispatch the same room/job, and as long as
+`_resolve_session_id` recovers the same `session_id` (it does, since that's encoded in the
+room name, not tied to any one job/worker process), this rehydration path picks the
+conversation back up where it left off.
 """
 
 from __future__ import annotations
@@ -29,11 +40,13 @@ from trackb.config import Settings, get_settings
 from trackb.contracts.models import AgentSpec
 from trackb.intake.graph import IntakeGraph, IntakeStepResult
 from trackb.intake.schema import IntakeSlots
+from trackb.llm.base import LLMProvider
 from trackb.llm.factory import build_llm_provider
 from trackb.provisioning.interfaces import AvatarAssignment, IntakeSessionResult
 from trackb.provisioning.orchestrator import run_intake_session
 from trackb.session.concurrency import SessionConcurrencyGuard
 from trackb.session.livekit_admin import session_id_from_room_name
+from trackb.session.redis_store import RedisSessionStore
 from trackb.session.room_client import LiveKitRoomClient
 from trackb.session.worker import SessionWorker, TextToSpeechFn, TranscribedUtterance
 from trackb.stt.whisper_stt import WhisperSTT
@@ -108,6 +121,54 @@ class UtteranceEmittingWorker(Protocol):
     async def leave(self) -> None: ...
 
 
+@runtime_checkable
+class IntakeProgressStore(Protocol):
+    """What `IntakeSessionDriver`/`intake_entrypoint` need from a `RedisSessionStore`-shaped
+    object to load, persist, and clear intake progress. Matches the slice of
+    `RedisSessionStore`'s public API actually called here, so tests can inject a lightweight
+    fake store instead of a real Redis-backed one -- same reasoning as
+    `UtteranceEmittingWorker` above.
+    """
+
+    async def load_intake_progress(
+        self, session_id: str
+    ) -> tuple[IntakeSlots, list[str]] | None: ...
+
+    async def save_intake_progress(
+        self, session_id: str, slots: IntakeSlots, history: list[str]
+    ) -> None: ...
+
+    async def clear_intake_progress(self, session_id: str) -> None: ...
+
+
+async def _load_or_create_intake_graph(
+    llm: LLMProvider,
+    session_id: str,
+    session_store: IntakeProgressStore | None,
+) -> IntakeGraph:
+    """Rehydrate `IntakeGraph` from prior progress if `session_store` has any for `session_id`,
+    otherwise start a blank conversation.
+
+    Pulled out of `intake_entrypoint` so it's unit-testable against a fake `session_store`
+    without needing a real `JobContext` -- see `tests/session/test_entrypoint.py`.
+    """
+    progress = await session_store.load_intake_progress(session_id) if session_store else None
+
+    if progress is not None:
+        slots, history = progress
+        filled_slots = [name for name in type(slots).model_fields if getattr(slots, name)]
+        logger.info(
+            "intake_resumed",
+            session_id=session_id,
+            filled_slots=filled_slots,
+            history_length=len(history),
+        )
+        return IntakeGraph(llm, initial_slots=slots, initial_history=history)
+
+    logger.info("intake_started_fresh", session_id=session_id)
+    return IntakeGraph(llm)
+
+
 class IntakeSessionDriver:
     """Turns transcribed utterances into intake progress, and intake completion into a
     provisioned `AgentSpec`.
@@ -134,6 +195,7 @@ class IntakeSessionDriver:
         session_worker: UtteranceEmittingWorker,
         avatar_assignment: AvatarAssignment = _UNASSIGNED_AVATAR,
         run_intake_session_fn: RunIntakeSessionFn = run_intake_session,
+        session_store: IntakeProgressStore | None = None,
     ) -> None:
         self._session_id = session_id
         self._owner = owner
@@ -141,6 +203,7 @@ class IntakeSessionDriver:
         self._session_worker = session_worker
         self._avatar_assignment = avatar_assignment
         self._run_intake_session_fn = run_intake_session_fn
+        self._session_store = session_store
         self._completed = False
         self._provisioned_spec: AgentSpec | None = None
 
@@ -159,12 +222,23 @@ class IntakeSessionDriver:
             return
 
         result: IntakeStepResult = await self._intake_graph.step(utterance.text)
+        await self._persist_progress()
 
         if result.status == "follow_up":
             await self._speak_follow_up(result)
             return
 
         await self._complete(result)
+
+    async def _persist_progress(self) -> None:
+        """Save the graph's accumulated slots/history after every turn, so a crashed job or
+        dropped connection can resume from here instead of restarting -- see
+        `_load_or_create_intake_graph` and `RedisSessionStore.save_intake_progress`."""
+        if self._session_store is None:
+            return
+        await self._session_store.save_intake_progress(
+            self._session_id, self._intake_graph.slots, self._intake_graph.history
+        )
 
     async def _speak_follow_up(self, result: IntakeStepResult) -> None:
         assert result.follow_up_question is not None  # guaranteed by IntakeGraph on "follow_up"
@@ -188,6 +262,9 @@ class IntakeSessionDriver:
         spec = await self._run_intake_session_fn(intake_result, self._avatar_assignment)
         self._provisioned_spec = spec
         self._completed = True
+
+        if self._session_store is not None:
+            await self._session_store.clear_intake_progress(self._session_id)
 
         await self._session_worker.speak(CLOSING_MESSAGE)
         await self._session_worker.leave()
@@ -251,12 +328,16 @@ async def intake_entrypoint(ctx: JobContext) -> None:
         tts=_make_tts_fn(tts_provider, _UNASSIGNED_AVATAR.voice_id),
     )
 
-    intake_graph = IntakeGraph(build_llm_provider(settings))
+    session_store = RedisSessionStore(settings=settings)
+    intake_graph = await _load_or_create_intake_graph(
+        build_llm_provider(settings), session_id, session_store
+    )
     driver = IntakeSessionDriver(
         session_id=session_id,
         owner=owner,
         intake_graph=intake_graph,
         session_worker=session_worker,
+        session_store=session_store,
     )
     session_worker.on_utterance(driver.on_utterance)
 

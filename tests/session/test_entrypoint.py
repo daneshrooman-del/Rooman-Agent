@@ -6,12 +6,14 @@ from pydantic import BaseModel
 
 from trackb.contracts.models import AgentSpec, FlowGraph
 from trackb.intake.graph import IntakeGraph
+from trackb.intake.schema import IntakeSlots
 from trackb.llm.mock import MockLLMProvider
 from trackb.provisioning.interfaces import AvatarAssignment, IntakeSessionResult
 from trackb.session.entrypoint import (
     _UNKNOWN_OWNER,
     CLOSING_MESSAGE,
     IntakeSessionDriver,
+    _load_or_create_intake_graph,
     _resolve_owner,
     _resolve_session_id,
 )
@@ -28,6 +30,28 @@ class _FakeSessionWorker:
 
     async def leave(self) -> None:
         self.left = True
+
+
+class _FakeIntakeProgressStore:
+    """Stands in for `RedisSessionStore`'s intake-progress slice."""
+
+    def __init__(self, existing: dict[str, tuple[IntakeSlots, list[str]]] | None = None) -> None:
+        self._progress = dict(existing or {})
+        self.saved_calls: list[tuple[str, IntakeSlots, list[str]]] = []
+        self.cleared: list[str] = []
+
+    async def load_intake_progress(self, session_id: str) -> tuple[IntakeSlots, list[str]] | None:
+        return self._progress.get(session_id)
+
+    async def save_intake_progress(
+        self, session_id: str, slots: IntakeSlots, history: list[str]
+    ) -> None:
+        self._progress[session_id] = (slots, list(history))
+        self.saved_calls.append((session_id, slots, list(history)))
+
+    async def clear_intake_progress(self, session_id: str) -> None:
+        self._progress.pop(session_id, None)
+        self.cleared.append(session_id)
 
 
 def _fake_agent_spec(session_id: str) -> AgentSpec:
@@ -186,6 +210,130 @@ async def test_multi_turn_conversation_reaching_completed_provisions_exactly_onc
         TranscribedUtterance(session_id="sess-3", text="one more thing", is_final=True)
     )
     assert len(provisioning_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_driver_persists_progress_to_session_store_after_each_turn() -> None:
+    llm = MockLLMProvider(
+        extract_fn=lambda prompt, schema: schema.model_validate({"purpose": "screen candidates"})
+    )
+    graph = IntakeGraph(llm)
+    worker = _FakeSessionWorker()
+    progress_store = _FakeIntakeProgressStore()
+
+    driver = IntakeSessionDriver(
+        session_id="sess-progress",
+        owner="owner-1",
+        intake_graph=graph,
+        session_worker=worker,
+        session_store=progress_store,
+    )
+
+    await driver.on_utterance(
+        TranscribedUtterance(session_id="sess-progress", text="I want an HR agent", is_final=True)
+    )
+
+    assert len(progress_store.saved_calls) == 1
+    saved_session_id, saved_slots, saved_history = progress_store.saved_calls[0]
+    assert saved_session_id == "sess-progress"
+    assert saved_slots.purpose == "screen candidates"
+    assert saved_history == ["I want an HR agent"]
+    assert progress_store.cleared == []
+
+
+@pytest.mark.asyncio
+async def test_driver_clears_progress_from_session_store_on_completion() -> None:
+    responses: list[dict[str, object]] = [
+        {"purpose": "take HR placement calls"},
+        {"caller_persona": "HR teams"},
+        {"workflow_steps": ["confirm role", "screen candidate"]},
+        {"languages": ["en"]},
+    ]
+    llm = MockLLMProvider(extract_fn=_extract_fn_sequence(responses))
+    graph = IntakeGraph(llm)
+    worker = _FakeSessionWorker()
+    progress_store = _FakeIntakeProgressStore()
+
+    async def fake_run_intake_session(
+        intake_result: IntakeSessionResult, avatar_assignment: AvatarAssignment
+    ) -> AgentSpec:
+        return _fake_agent_spec(intake_result.session_id)
+
+    driver = IntakeSessionDriver(
+        session_id="sess-clear",
+        owner="owner-1",
+        intake_graph=graph,
+        session_worker=worker,
+        run_intake_session_fn=fake_run_intake_session,
+        session_store=progress_store,
+    )
+
+    utterances = [
+        "I want an agent that takes HR placement calls",
+        "HR teams will call it",
+        "confirm role, then screen candidate",
+        "just English",
+    ]
+    for text in utterances:
+        await driver.on_utterance(
+            TranscribedUtterance(session_id="sess-clear", text=text, is_final=True)
+        )
+
+    assert driver.completed is True
+    assert progress_store.cleared == ["sess-clear"]
+    assert await progress_store.load_intake_progress("sess-clear") is None
+
+
+@pytest.mark.asyncio
+async def test_load_or_create_intake_graph_starts_fresh_when_no_prior_progress() -> None:
+    llm = MockLLMProvider(extract_fn=lambda prompt, schema: schema.model_validate({}))
+    progress_store = _FakeIntakeProgressStore()
+
+    graph = await _load_or_create_intake_graph(llm, "sess-fresh", progress_store)
+
+    assert graph.slots == IntakeSlots()
+    assert graph.history == []
+
+
+@pytest.mark.asyncio
+async def test_load_or_create_intake_graph_rehydrates_from_existing_progress() -> None:
+    """This is the actual resume mechanism `intake_entrypoint` relies on: given prior progress
+    under a session_id (e.g. because a job crashed or the connection dropped and LiveKit
+    redispatched the same room), the graph picks up with the slots/history already filled in,
+    instead of asking the user to repeat themselves from scratch."""
+    llm = MockLLMProvider(
+        extract_fn=lambda prompt, schema: schema.model_validate(
+            {"workflow_steps": ["confirm role", "screen candidate"]}
+        )
+    )
+    prior_slots = IntakeSlots(purpose="take HR placement calls", caller_persona="HR teams")
+    prior_history = ["I want an agent that takes HR placement calls", "HR teams will call it"]
+    progress_store = _FakeIntakeProgressStore(
+        existing={"sess-resume": (prior_slots, prior_history)}
+    )
+
+    graph = await _load_or_create_intake_graph(llm, "sess-resume", progress_store)
+
+    assert graph.slots.purpose == "take HR placement calls"
+    assert graph.slots.caller_persona == "HR teams"
+    assert graph.history == prior_history
+
+    # And the rehydrated graph can continue the conversation from here rather than starting
+    # over: the next follow-up question should be for a still-missing slot, not "purpose"
+    # again.
+    result = await graph.step("confirm role, then screen candidate")
+    assert result.slots.purpose == "take HR placement calls"
+    assert result.slots.workflow_steps == ["confirm role", "screen candidate"]
+
+
+@pytest.mark.asyncio
+async def test_load_or_create_intake_graph_starts_fresh_with_no_session_store() -> None:
+    llm = MockLLMProvider(extract_fn=lambda prompt, schema: schema.model_validate({}))
+
+    graph = await _load_or_create_intake_graph(llm, "sess-no-store", None)
+
+    assert graph.slots == IntakeSlots()
+    assert graph.history == []
 
 
 class _FakeJob:
