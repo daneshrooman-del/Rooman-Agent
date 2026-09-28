@@ -36,4 +36,6 @@ class ConversationStartResponse(BaseModel):
     session_id: str
     agent_id: str
     room_name: str
+    livekit_url: str
+    token: str
     status: Literal["pending"] = "pending"

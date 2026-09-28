@@ -41,6 +41,7 @@ from trackb.config import Settings, get_settings
 logger = structlog.get_logger(__name__)
 
 DEFAULT_AGENT_NAME = "trackb-intake"
+DEFAULT_CONVERSATION_AGENT_NAME = "trackb-conversation"
 LIVEKIT_API_TIMEOUT_SECONDS = 10.0
 JOIN_TOKEN_TTL_SECONDS = 60 * 60  # 1 hour -- generous enough to cover a full intake session
 
@@ -76,6 +77,31 @@ def session_id_from_room_name(room_name: str) -> str | None:
     if not room_name.startswith(ROOM_NAME_PREFIX):
         return None
     return room_name[len(ROOM_NAME_PREFIX) :]
+
+
+CONVERSATION_ROOM_NAME_PREFIX = "conversation-"
+
+
+def conversation_room_name(agent_id: str, session_id: str) -> str:
+    return f"{CONVERSATION_ROOM_NAME_PREFIX}{agent_id}-{session_id}"
+
+
+def session_id_from_conversation_room_name(room_name: str, agent_id: str) -> str | None:
+    """Inverse of `conversation_room_name`, given the `agent_id` already recovered from the
+    dispatched job's metadata (see `create_conversation_room`'s docstring).
+
+    Unlike `session_id_from_room_name`, this needs `agent_id` as an input rather than parsing
+    it out of the room name too: both `agent_id` and `session_id` can themselves contain
+    hyphens, so `f"{PREFIX}{agent_id}-{session_id}"` isn't unambiguously splittable from the
+    room name alone. `agent_id` is always known first on the worker side (it comes from job
+    metadata, resolved before the room name is ever consulted for `session_id`), so this simply
+    strips the now-known `f"{PREFIX}{agent_id}-"` prefix. Returns `None` if `room_name` doesn't
+    start with that exact prefix.
+    """
+    prefix = f"{CONVERSATION_ROOM_NAME_PREFIX}{agent_id}-"
+    if not room_name.startswith(prefix):
+        return None
+    return room_name[len(prefix) :]
 
 
 class LiveKitAdmin:
@@ -122,6 +148,54 @@ class LiveKitAdmin:
 
         logger.info(
             "livekit_room_created",
+            session_id=session_id,
+            room_name=room.name,
+            room_sid=room.sid,
+            agent_name=agent_name,
+        )
+        return room
+
+    async def create_conversation_room(
+        self,
+        agent_id: str,
+        session_id: str,
+        agent_name: str = DEFAULT_CONVERSATION_AGENT_NAME,
+    ) -> api.Room:
+        """Create (or return the existing) room for a deployed agent's live conversation.
+
+        Mirrors `create_intake_room`, but the dispatched worker (`conversation_entrypoint`)
+        needs to know *which* provisioned `AgentSpec` to run -- there's no such ambiguity
+        during intake, where the worker always drives the same onboarding flow. `agent_id` is
+        passed through two ways:
+
+        - `RoomAgentDispatch(metadata=agent_id)`: confirmed against the installed
+          `livekit-api`/`livekit-agents` (`agent_dispatch.pyi`) that a `RoomAgentDispatch`'s
+          `metadata` field becomes the dispatched job's own `metadata` (`ctx.job.metadata` in
+          the entrypoint, the same `agent.Job` proto `ctx.job.id`/`ctx.job.participant` are
+          already read from elsewhere in this codebase) -- this is the primary channel, read
+          first by `conversation_entrypoint._resolve_agent_id`.
+        - `CreateRoomRequest(metadata=agent_id)` (room-level): a fallback, in case a worker
+          ever needs to recover `agent_id` from `ctx.room.metadata` without a job metadata
+          value available (e.g. a manually-created dispatch that didn't set one).
+
+        Room names additionally encode `agent_id` (see `conversation_room_name`) purely for
+        human-readable traceability in LiveKit's own room listing -- the worker never parses
+        `agent_id` back out of the room name, only `session_id` (via
+        `session_id_from_conversation_room_name`, once `agent_id` is already known from
+        metadata).
+        """
+        room_name = conversation_room_name(agent_id, session_id)
+        request = api.CreateRoomRequest(
+            name=room_name,
+            metadata=agent_id,
+            agents=[api.RoomAgentDispatch(agent_name=agent_name, metadata=agent_id)],
+        )
+
+        room = await self._create_room(request)
+
+        logger.info(
+            "livekit_conversation_room_created",
+            agent_id=agent_id,
             session_id=session_id,
             room_name=room.name,
             room_sid=room.sid,

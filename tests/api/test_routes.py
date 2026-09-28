@@ -23,6 +23,7 @@ class _FakeLiveKitAdmin:
         self.fail = fail
         self.create_calls: list[tuple[str, str]] = []
         self.token_calls: list[tuple[str, str]] = []
+        self.conversation_create_calls: list[tuple[str, str, str]] = []
 
     async def create_intake_room(
         self, session_id: str, agent_name: str = "trackb-intake"
@@ -31,6 +32,14 @@ class _FakeLiveKitAdmin:
             raise LiveKitAdminError("simulated livekit outage")
         self.create_calls.append((session_id, agent_name))
         return SimpleNamespace(name=f"intake-{session_id}", sid="RM_fake")
+
+    async def create_conversation_room(
+        self, agent_id: str, session_id: str, agent_name: str = "trackb-conversation"
+    ) -> Any:
+        if self.fail:
+            raise LiveKitAdminError("simulated livekit outage")
+        self.conversation_create_calls.append((agent_id, session_id, agent_name))
+        return SimpleNamespace(name=f"conversation-{agent_id}-{session_id}", sid="RM_fake_conv")
 
     async def mint_join_token(
         self, room_name: str, identity: str, *, name: str | None = None
@@ -179,8 +188,32 @@ def test_conversation_start_for_missing_agent_returns_404(client: TestClient) ->
     assert response.status_code == 404
 
 
-def test_conversation_start_for_existing_agent_returns_session(
-    client: TestClient, test_engine: Engine
+def test_conversation_start_for_missing_agent_returns_404_even_without_livekit_credentials(
+    tmp_path: Path,
+) -> None:
+    """Regression test for a bug only found by actually running the app locally: a missing
+    agent_id must 404 regardless of whether LiveKit is configured. FastAPI resolves a route's
+    `Depends` params in declaration order and stops at the first one that raises, so if the
+    agent-existence check only lived in the route body (after `Depends(get_livekit_admin)` had
+    already run), a request for a nonexistent agent against an unconfigured LiveKit surfaced a
+    misleading 503 instead of 404 -- see `_existing_agent_spec`'s docstring in `api/routes.py`.
+    This test intentionally does NOT override `get_livekit_admin`, so it exercises the real
+    (unconfigured-by-default) dependency, same as
+    `test_intake_start_without_livekit_credentials_returns_503_not_500` above.
+    """
+    db_path = tmp_path / "conversation_404_regression_test.db"
+    engine = get_engine(f"sqlite:///{db_path}")
+    app = create_app()
+    app.dependency_overrides[get_db_engine] = lambda: engine
+    with TestClient(app) as test_client:
+        response = test_client.post("/agents/does-not-exist/conversation/start")
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+
+
+def test_conversation_start_for_existing_agent_creates_livekit_room_and_join_token(
+    client: TestClient, test_engine: Engine, fake_livekit_admin: _FakeLiveKitAdmin
 ) -> None:
     spec = _make_spec("agent-1")
     save_agent_spec(spec, engine=test_engine)
@@ -192,4 +225,23 @@ def test_conversation_start_for_existing_agent_returns_session(
     assert body["agent_id"] == "agent-1"
     assert body["status"] == "pending"
     assert isinstance(body["session_id"], str) and body["session_id"]
-    assert "agent-1" in body["room_name"]
+    assert body["room_name"] == f"conversation-agent-1-{body['session_id']}"
+    assert body["livekit_url"]
+    assert body["token"] == "fake-jwt-for-owner-1"
+
+    assert fake_livekit_admin.conversation_create_calls == [
+        ("agent-1", body["session_id"], "trackb-conversation")
+    ]
+    assert fake_livekit_admin.token_calls == [(body["room_name"], "owner-1")]
+
+
+def test_conversation_start_returns_503_when_livekit_room_creation_fails(
+    client: TestClient, test_engine: Engine, fake_livekit_admin: _FakeLiveKitAdmin
+) -> None:
+    spec = _make_spec("agent-1")
+    save_agent_spec(spec, engine=test_engine)
+    fake_livekit_admin.fail = True
+
+    response = client.post("/agents/agent-1/conversation/start")
+
+    assert response.status_code == 503

@@ -9,9 +9,12 @@ from livekit import api
 from trackb.config import Settings
 from trackb.session.livekit_admin import (
     DEFAULT_AGENT_NAME,
+    DEFAULT_CONVERSATION_AGENT_NAME,
     LiveKitAdmin,
     LiveKitAdminError,
+    conversation_room_name,
     room_name_for_session,
+    session_id_from_conversation_room_name,
 )
 
 
@@ -142,6 +145,68 @@ async def test_aclose_delegates_to_underlying_client() -> None:
     await admin.aclose()
 
     assert fake_client.aclose_called is True
+
+
+def test_conversation_room_name_is_deterministic() -> None:
+    assert conversation_room_name("agent-1", "sess-1") == "conversation-agent-1-sess-1"
+    assert conversation_room_name("agent-1", "sess-1") == conversation_room_name(
+        "agent-1", "sess-1"
+    )
+
+
+def test_session_id_from_conversation_room_name_strips_known_agent_id_prefix() -> None:
+    room_name = conversation_room_name("agent-1", "sess-with-hyphens-123")
+
+    assert (
+        session_id_from_conversation_room_name(room_name, "agent-1") == "sess-with-hyphens-123"
+    )
+
+
+def test_session_id_from_conversation_room_name_returns_none_for_mismatched_prefix() -> None:
+    room_name = conversation_room_name("agent-1", "sess-1")
+
+    assert session_id_from_conversation_room_name(room_name, "some-other-agent") is None
+
+
+@pytest.mark.asyncio
+async def test_create_conversation_room_dispatches_agent_with_agent_id_metadata() -> None:
+    fake_room = api.Room(name="conversation-agent-1-sess-1", sid="RM_conv123")
+    room_service = _FakeRoomService(room=fake_room)
+    admin = LiveKitAdmin(settings=_settings(), client=_FakeLiveKitAPI(room_service))  # type: ignore[arg-type]
+
+    result = await admin.create_conversation_room("agent-1", "sess-1")
+
+    assert result.name == "conversation-agent-1-sess-1"
+    assert len(room_service.calls) == 1
+
+    request = room_service.calls[0]
+    assert request.name == "conversation-agent-1-sess-1"
+    assert request.metadata == "agent-1"
+    assert len(request.agents) == 1
+    assert request.agents[0].agent_name == DEFAULT_CONVERSATION_AGENT_NAME
+    assert request.agents[0].metadata == "agent-1"
+
+
+@pytest.mark.asyncio
+async def test_create_conversation_room_accepts_custom_agent_name() -> None:
+    fake_room = api.Room(name="conversation-agent-1-sess-2", sid="RM_conv456")
+    room_service = _FakeRoomService(room=fake_room)
+    admin = LiveKitAdmin(settings=_settings(), client=_FakeLiveKitAPI(room_service))  # type: ignore[arg-type]
+
+    await admin.create_conversation_room("agent-1", "sess-2", agent_name="custom-conv-agent")
+
+    assert room_service.calls[0].agents[0].agent_name == "custom-conv-agent"
+
+
+@pytest.mark.asyncio
+async def test_create_conversation_room_raises_clear_error_after_retries_exhausted() -> None:
+    room_service = _FakeRoomService(fail_times=10)
+    admin = LiveKitAdmin(settings=_settings(), client=_FakeLiveKitAPI(room_service))  # type: ignore[arg-type]
+
+    with pytest.raises(LiveKitAdminError, match="conversation-agent-1-sess-3"):
+        await admin.create_conversation_room("agent-1", "sess-3")
+
+    assert len(room_service.calls) == 3
 
 
 @pytest.mark.asyncio

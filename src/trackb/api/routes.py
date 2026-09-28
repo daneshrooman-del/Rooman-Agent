@@ -88,22 +88,55 @@ async def list_agents(engine: Engine = Depends(get_db_engine)) -> list[AgentSpec
     return list_agent_specs(engine=engine)
 
 
+async def _existing_agent_spec(
+    agent_id: str, engine: Engine = Depends(get_db_engine)  # noqa: B008
+) -> AgentSpec:
+    """404s on a missing agent, as its own dependency rather than a check in the route body.
+
+    FastAPI resolves a route's `Depends` params in declaration order and stops at the first one
+    that raises -- a route body's own checks never run until *every* declared dependency has
+    already resolved successfully. `start_conversation` also depends on `get_livekit_admin`,
+    which raises a 503 (see its docstring) whenever LiveKit isn't configured; if this 404 check
+    stayed in the route body, a request for a nonexistent agent_id against an unconfigured
+    LiveKit would surface as a misleading 503 instead of 404 -- LiveKit's own dependency would
+    already have raised before the body's agent lookup ever ran. Declaring this as its own
+    `Depends`, ahead of `get_livekit_admin` in `start_conversation`'s signature, ensures the 404
+    is what a caller actually sees for a missing agent, regardless of LiveKit configuration.
+    """
+    spec = get_agent_spec(agent_id, engine=engine)
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"agent not found: {agent_id}")
+    return spec
+
+
 @router.post(
     "/agents/{agent_id}/conversation/start", response_model=ConversationStartResponse
 )
 async def start_conversation(
-    agent_id: str, engine: Engine = Depends(get_db_engine)  # noqa: B008
+    agent_id: str,
+    spec: AgentSpec = Depends(_existing_agent_spec),  # noqa: B008
+    livekit_admin: LiveKitAdmin = Depends(get_livekit_admin),  # noqa: B008
 ) -> ConversationStartResponse:
-    spec = get_agent_spec(agent_id, engine=engine)
-    if spec is None:
-        raise HTTPException(status_code=404, detail=f"agent not found: {agent_id}")
+    try:
+        live_session = await run_conversation(spec, livekit_admin)
+    except LiveKitAdminError as exc:
+        log.error("session_start_failed", agent_id=agent_id, error=str(exc))
+        raise HTTPException(
+            status_code=503, detail=f"failed to provision LiveKit room: {exc}"
+        ) from exc
 
-    live_session = run_conversation(spec)
-    log.info("session_start", agent_id=agent_id, session_id=live_session.session_id)
+    log.info(
+        "session_start",
+        agent_id=agent_id,
+        session_id=live_session.session_id,
+        room_name=live_session.room_name,
+    )
 
     return ConversationStartResponse(
         session_id=live_session.session_id,
         agent_id=agent_id,
         room_name=live_session.room_name,
+        livekit_url=live_session.livekit_url,
+        token=live_session.token,
         status=live_session.status,
     )

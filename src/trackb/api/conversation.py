@@ -1,12 +1,10 @@
-"""Placeholder for the cross-track `run_conversation(agent_spec) -> LiveSession` entry point.
+"""The cross-track `run_conversation(agent_spec) -> LiveSession` entry point.
 
-The real implementation joins the LiveKit room set up by `trackb.session` /
-`trackb.stt`, which another agent is building concurrently and doesn't exist
-yet. Until then this just validates its input and returns a stub session
-descriptor, so `POST /agents/{agent_id}/conversation/start` has something
-concrete to call. Swap the import in `api/routes.py` for the real
-`run_conversation` (and drop `LiveSessionStub` for the real `LiveSession`)
-once `trackb.session` lands.
+Mirrors how `POST /intake/start` (`api/routes.py`'s `start_intake`) wires a real LiveKit room +
+join token via `LiveKitAdmin`: this brings a real `conversation-{agent_id}-{session_id}` room
+into existence (dispatching `trackb.session.conversation_entrypoint`'s worker into it, via
+`LiveKitAdmin.create_conversation_room`) instead of returning a stub session descriptor with no
+LiveKit call behind it.
 """
 
 from __future__ import annotations
@@ -16,19 +14,32 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from trackb.config import get_settings
 from trackb.contracts.models import AgentSpec
+from trackb.session.livekit_admin import LiveKitAdmin
 
 
-class LiveSessionStub(BaseModel):
-    """Placeholder standing in for the real `LiveSession` type from `trackb.session`."""
+class LiveSession(BaseModel):
+    """The real cross-track `LiveSession` type: a live, joinable conversation room."""
 
     session_id: str
     agent_id: str
     room_name: str
+    livekit_url: str
+    token: str
     status: Literal["pending"] = "pending"
 
 
-def run_conversation(agent_spec: AgentSpec) -> LiveSessionStub:
+async def run_conversation(agent_spec: AgentSpec, livekit_admin: LiveKitAdmin) -> LiveSession:
     session_id = str(uuid.uuid4())
-    room_name = f"agent-{agent_spec.agent_id}-{session_id[:8]}"
-    return LiveSessionStub(session_id=session_id, agent_id=agent_spec.agent_id, room_name=room_name)
+
+    room = await livekit_admin.create_conversation_room(agent_spec.agent_id, session_id)
+    token = await livekit_admin.mint_join_token(room.name, identity=agent_spec.owner)
+
+    return LiveSession(
+        session_id=session_id,
+        agent_id=agent_spec.agent_id,
+        room_name=room.name,
+        livekit_url=get_settings().livekit_url,
+        token=token,
+    )
