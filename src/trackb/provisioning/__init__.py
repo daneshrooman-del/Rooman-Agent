@@ -1,7 +1,6 @@
 from trackb.provisioning.interfaces import (
     AvatarAssignment,
     FlowGraphGenerator,
-    IntakeGraph,
     IntakeSessionResult,
     KnowledgeBaseIngestor,
 )
@@ -12,7 +11,6 @@ __all__ = [
     "AvatarAssignment",
     "FlowGraphGenerator",
     "IncompleteIntakeError",
-    "IntakeGraph",
     "IntakeSessionResult",
     "KnowledgeBaseIngestor",
     "get_agent_spec",

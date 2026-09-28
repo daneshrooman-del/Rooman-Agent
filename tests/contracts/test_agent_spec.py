@@ -16,7 +16,9 @@ def _sample_flow_graph() -> FlowGraph:
             FlowState(
                 name="greet",
                 objective="Greet the caller and confirm the purpose of the call",
-                transitions=[FlowTransition(on="purpose_confirmed", to_state="collect_requirements")],
+                transitions=[
+                    FlowTransition(on="purpose_confirmed", to_state="collect_requirements")
+                ],
             ),
             FlowState(
                 name="collect_requirements",

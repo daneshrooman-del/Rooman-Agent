@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from sqlalchemy.engine import Engine
 
@@ -22,14 +24,6 @@ def _complete_slots() -> IntakeSlots:
     )
 
 
-class FakeIntakeGraph:
-    def __init__(self, result: IntakeSessionResult) -> None:
-        self._result = result
-
-    async def run_to_completion(self) -> IntakeSessionResult:
-        return self._result
-
-
 class FakeFlowGraphGenerator:
     def __init__(self) -> None:
         self.calls: list[IntakeSlots] = []
@@ -45,15 +39,15 @@ class FakeFlowGraphGenerator:
 class FakeKnowledgeBaseIngestor:
     def __init__(self, kb_id: str = "kb-fake-1") -> None:
         self.kb_id = kb_id
-        self.calls: list[tuple[str, list[bytes]]] = []
+        self.calls: list[tuple[str, list[str]]] = []
 
-    async def __call__(self, agent_id: str, documents: list[bytes]) -> str:
+    async def __call__(self, agent_id: str, documents: list[str]) -> str:
         self.calls.append((agent_id, documents))
         return self.kb_id
 
 
 @pytest.fixture
-def test_engine(tmp_path) -> Engine:
+def test_engine(tmp_path: Path) -> Engine:
     db_path = tmp_path / "provisioning_test.db"
     return get_engine(f"sqlite:///{db_path}")
 
@@ -67,9 +61,9 @@ async def test_run_intake_session_assembles_valid_agent_spec(test_engine: Engine
     avatar_assignment = AvatarAssignment(avatar_id="stub-avatar-1", voice_id="voice-1")
 
     spec = await run_intake_session(
-        FakeIntakeGraph(intake_result),
-        flow_generator,
+        intake_result,
         avatar_assignment,
+        flow_graph_generator=flow_generator,
         engine=test_engine,
     )
 
@@ -94,15 +88,15 @@ async def test_run_intake_session_ingests_reference_documents(test_engine: Engin
         slots=_complete_slots(),
         session_id="session-2",
         owner="user-2",
-        reference_documents=[b"doc-1", b"doc-2"],
+        reference_documents=["doc-1", "doc-2"],
     )
     ingestor = FakeKnowledgeBaseIngestor(kb_id="kb-42")
     avatar_assignment = AvatarAssignment(avatar_id="stub-avatar-2", voice_id="voice-2")
 
     spec = await run_intake_session(
-        FakeIntakeGraph(intake_result),
-        FakeFlowGraphGenerator(),
+        intake_result,
         avatar_assignment,
+        flow_graph_generator=FakeFlowGraphGenerator(),
         kb_ingestor=ingestor,
         engine=test_engine,
     )
@@ -111,7 +105,7 @@ async def test_run_intake_session_ingests_reference_documents(test_engine: Engin
     assert len(ingestor.calls) == 1
     called_agent_id, called_docs = ingestor.calls[0]
     assert called_agent_id == spec.agent_id
-    assert called_docs == [b"doc-1", b"doc-2"]
+    assert called_docs == ["doc-1", "doc-2"]
 
 
 @pytest.mark.asyncio
@@ -124,9 +118,9 @@ async def test_run_intake_session_raises_on_incomplete_slots(test_engine: Engine
 
     with pytest.raises(IncompleteIntakeError) as exc_info:
         await run_intake_session(
-            FakeIntakeGraph(intake_result),
-            FakeFlowGraphGenerator(),
+            intake_result,
             avatar_assignment,
+            flow_graph_generator=FakeFlowGraphGenerator(),
             engine=test_engine,
         )
 

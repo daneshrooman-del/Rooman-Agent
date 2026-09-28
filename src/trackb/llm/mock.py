@@ -27,7 +27,9 @@ class MockLLMProvider:
     async def complete(self, prompt: str, system: str | None = None) -> str:
         return self._complete_fn(prompt)
 
-    async def extract(self, prompt: str, schema: type[SchemaT], system: str | None = None) -> SchemaT:
+    async def extract(
+        self, prompt: str, schema: type[SchemaT], system: str | None = None
+    ) -> SchemaT:
         if self._extract_fn is None:
             raise NotImplementedError(
                 "MockLLMProvider was not given extract_fn -- pass one that returns "

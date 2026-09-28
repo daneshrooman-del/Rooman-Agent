@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +14,7 @@ from trackb.provisioning.store import get_engine, save_agent_spec
 
 
 @pytest.fixture
-def test_engine(tmp_path) -> Engine:
+def test_engine(tmp_path: Path) -> Engine:
     db_path = tmp_path / "api_test.db"
     return get_engine(f"sqlite:///{db_path}")
 

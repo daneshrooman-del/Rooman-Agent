@@ -17,6 +17,8 @@ class LLMProvider(Protocol):
         """Free-form text completion."""
         ...
 
-    async def extract(self, prompt: str, schema: type[SchemaT], system: str | None = None) -> SchemaT:
+    async def extract(
+        self, prompt: str, schema: type[SchemaT], system: str | None = None
+    ) -> SchemaT:
         """Structured extraction: the response is validated against `schema` before returning."""
         ...

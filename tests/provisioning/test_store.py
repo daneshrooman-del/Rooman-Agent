@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from sqlalchemy.engine import Engine
 
@@ -8,7 +10,7 @@ from trackb.provisioning.store import get_agent_spec, get_engine, list_agent_spe
 
 
 @pytest.fixture
-def test_engine(tmp_path) -> Engine:
+def test_engine(tmp_path: Path) -> Engine:
     db_path = tmp_path / "store_test.db"
     return get_engine(f"sqlite:///{db_path}")
 

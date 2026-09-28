@@ -1,16 +1,17 @@
 """Assembles and persists the final `AgentSpec`.
 
 `run_intake_session` is Track B's half of the `run_intake_session() -> AgentSpec`
-entry point from the cross-track contract. The literal contract signature takes
-no arguments because, conceptually, Track C just wants "run an intake session,
-get back a spec" -- but the actual driver (`IntakeGraph`), flow-graph generator,
-and KB ingestor are being built by other agents in parallel and don't exist as
-importable code yet. So this function takes them as injected, Protocol-shaped
-dependencies (see `provisioning/interfaces.py`) instead of importing concrete
-modules. Once those land, a zero-arg wrapper (or a config-driven factory) that
-supplies the real objects as defaults can sit in front of this and satisfy the
-contract signature exactly; until then, callers (the API layer, tests) pass
-the dependencies explicitly.
+entry point from the cross-track contract. It does NOT drive the intake
+conversation itself -- that's `trackb.intake.graph.IntakeGraph.step()`, called
+turn by turn by whoever owns the live session (the LiveKit session loop, or
+Track C's API layer for a text-only path) as utterances arrive. Once that
+caller sees `IntakeStepResult.status == "completed"`, it builds an
+`IntakeSessionResult` (slots + its own session_id/owner bookkeeping) and calls
+this function to turn that into a persisted `AgentSpec`.
+
+`flow_graph_generator` and `kb_ingestor` default to the real
+`trackb.flowgen.generate_flow_graph` / `trackb.kb.ingest` (both exist now);
+they stay overridable so tests can inject fakes without a real LLM or Qdrant.
 """
 
 from __future__ import annotations
@@ -22,13 +23,14 @@ import structlog
 from sqlalchemy.engine import Engine
 
 from trackb.contracts.models import AgentSpec, ToolBinding
+from trackb.flowgen import generate_flow_graph as _default_flow_graph_generator
 from trackb.intake.schema import IntakeSlots
+from trackb.kb import ingest as _default_kb_ingestor
 from trackb.llm.base import LLMProvider
 from trackb.llm.mock import MockLLMProvider
 from trackb.provisioning.interfaces import (
     AvatarAssignment,
     FlowGraphGenerator,
-    IntakeGraph,
     IntakeSessionResult,
     KnowledgeBaseIngestor,
 )
@@ -56,10 +58,10 @@ class IncompleteIntakeError(Exception):
 
 
 async def run_intake_session(
-    intake_graph: IntakeGraph,
-    flow_graph_generator: FlowGraphGenerator,
+    intake_result: IntakeSessionResult,
     avatar_assignment: AvatarAssignment,
     *,
+    flow_graph_generator: FlowGraphGenerator | None = None,
     llm: LLMProvider | None = None,
     kb_ingestor: KnowledgeBaseIngestor | None = None,
     tool_bindings: list[ToolBinding] | None = None,
@@ -68,19 +70,23 @@ async def run_intake_session(
     persist: bool = True,
     engine: Engine | None = None,
 ) -> AgentSpec:
-    """Drive intake to completion, generate a flow graph, ingest any reference
-    documents, assemble a complete `AgentSpec`, and persist it.
+    """Generate a flow graph, ingest any reference documents, assemble a
+    complete `AgentSpec` from an already-finished intake conversation, and
+    persist it.
 
     Args:
-        intake_graph: drives the slot-filling conversation; see
-            `provisioning.interfaces.IntakeGraph` for the shape expected.
-        flow_graph_generator: turns filled slots into a `FlowGraph`.
+        intake_result: the completed output of driving `IntakeGraph.step()`
+            to completion -- provisioning never drives that conversation
+            itself, only finalizes it.
         avatar_assignment: the avatar_id/voice_id to wire into the spec.
+        flow_graph_generator: turns filled slots into a `FlowGraph`; defaults
+            to the real `trackb.flowgen.generate_flow_graph`.
         llm: passed through to `flow_graph_generator`; defaults to
             `MockLLMProvider` for local/dev use since the real backend is
             chosen outside this track and wired in via config.
-        kb_ingestor: optional; if given and the intake session collected
-            reference documents, they're ingested into a knowledge base.
+        kb_ingestor: ingests `intake_result.reference_documents` into a
+            knowledge base if any were provided; defaults to the real
+            `trackb.kb.ingest`.
         tool_bindings, guardrails, channels: optional overrides; sensible
             defaults are used otherwise.
         persist: set False in tests that don't want a DB write.
@@ -92,9 +98,10 @@ async def run_intake_session(
         IncompleteIntakeError: if the intake session ended without filling
             every slot in `IntakeSlots.missing_required_slots()`.
     """
-    log.info("session_start")
+    log.info("session_start", session_id=intake_result.session_id)
 
-    intake_result: IntakeSessionResult = await intake_graph.run_to_completion()
+    flow_graph_generator = flow_graph_generator or _default_flow_graph_generator
+    kb_ingestor = kb_ingestor or _default_kb_ingestor
 
     missing_slots = intake_result.slots.missing_required_slots()
     if missing_slots:

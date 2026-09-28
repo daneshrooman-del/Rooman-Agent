@@ -2,9 +2,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+Channel = Literal["phone", "web", "api"]
+
+
+def _default_channels() -> list[Channel]:
+    return ["web"]
+
 
 class FlowTransition(BaseModel):
-    on: str = Field(description="The condition/signal that triggers this transition, e.g. 'slot_confirmed' or 'user_declines'")
+    on: str = Field(
+        description="The condition/signal that triggers this transition, "
+        "e.g. 'slot_confirmed' or 'user_declines'"
+    )
     to_state: str
 
 
@@ -38,6 +47,6 @@ class AgentSpec(BaseModel):
     avatar_id: str
     voice_id: str
     languages: list[str] = Field(default_factory=lambda: ["en"])
-    channels: list[Literal["phone", "web", "api"]] = Field(default_factory=lambda: ["web"])
+    channels: list[Channel] = Field(default_factory=_default_channels)
     status: Literal["draft", "active", "disabled"] = "draft"
     created_from_session_id: str

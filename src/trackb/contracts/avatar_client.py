@@ -39,5 +39,7 @@ class StubAvatarServiceClient:
     ) -> bytes:
         if avatar_id not in self._avatars:
             raise KeyError(f"unknown avatar_id: {avatar_id}")
-        payload = script_or_audio if isinstance(script_or_audio, bytes) else script_or_audio.encode()
+        payload = (
+            script_or_audio if isinstance(script_or_audio, bytes) else script_or_audio.encode()
+        )
         return b"STUB_VIDEO:" + action_type.encode() + b":" + payload

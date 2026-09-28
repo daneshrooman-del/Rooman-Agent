@@ -23,7 +23,8 @@ class IntakeSlots(BaseModel):
     )
     caller_persona: str | None = Field(
         default=None,
-        description="Who will call/use this agent once it's deployed, e.g. 'HR teams' or 'candidates'",
+        description="Who will call/use this agent once it's deployed, "
+        "e.g. 'HR teams' or 'candidates'",
     )
     required_inputs: list[str] = Field(
         default_factory=list,
@@ -40,7 +41,8 @@ class IntakeSlots(BaseModel):
         description="External systems the new agent should be able to call, e.g. 'ATS', 'calendar'",
     )
     tone: str | None = Field(
-        default=None, description="The desired tone/persona for the new agent, e.g. 'professional and warm'"
+        default=None,
+        description="The desired tone/persona for the new agent, e.g. 'professional and warm'",
     )
     languages: list[str] = Field(
         default_factory=list, description="Language(s) the new agent must operate in"
