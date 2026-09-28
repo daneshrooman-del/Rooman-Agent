@@ -236,7 +236,9 @@ async def intake_entrypoint(ctx: JobContext) -> None:
     session_id = _resolve_session_id(ctx)
     owner = _resolve_owner(ctx)
 
-    room_client = LiveKitRoomClient(ctx.room)
+    room_client = LiveKitRoomClient(
+        ctx.room, participant_wait_timeout_seconds=settings.participant_wait_timeout_seconds
+    )
     stt = WhisperSTT(settings=settings)
     guard = SessionConcurrencyGuard(settings=settings)
     tts_provider = _build_tts_provider(settings)

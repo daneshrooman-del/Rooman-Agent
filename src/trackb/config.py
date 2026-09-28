@@ -29,6 +29,12 @@ class Settings(BaseSettings):
 
     max_concurrent_sessions: int = 10
     session_init_timeout_seconds: float = 15.0
+    participant_wait_timeout_seconds: float = 120.0
+    """How long a session waits, after joining the room, for a human participant to actually
+    appear before giving up. Distinct from `session_init_timeout_seconds` (which bounds the
+    room-join call itself). 120s by default -- generous enough for a person to open a client,
+    paste a token, and connect, rather than the tight window a fully automated client would
+    need."""
 
 
 def get_settings() -> Settings:

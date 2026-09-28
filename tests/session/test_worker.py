@@ -165,3 +165,48 @@ async def test_join_raises_capacity_error_when_guard_has_no_free_slot() -> None:
         await worker.join(url="ws://livekit.local", token="tok")
 
     await holder_task
+
+
+class _FailingAudioRoomClient(_FakeRoomClient):
+    """A room client whose `audio_frames()` fails outright, e.g. simulating
+    `LiveKitRoomClient` timing out waiting for a remote participant to ever join."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__(frames=[])
+        self._error = error
+
+    async def audio_frames(self) -> AsyncIterator[bytes]:
+        raise self._error
+        yield b""  # pragma: no cover -- unreachable; keeps this an async generator
+
+
+@pytest.mark.asyncio
+async def test_audio_pump_failure_forces_a_full_leave_instead_of_a_silent_zombie() -> None:
+    """Regression test found via a real manual run against a live LiveKit server:
+    `audio_frames()` failing (e.g. a participant-wait timeout) used to just log an error and
+    let its task die -- the session stayed "joined" forever, its transcript pump running
+    against an STT that would never receive anything again, and nothing ever called leave().
+    A failed pump task must now force a full leave() on its own."""
+    room = _FailingAudioRoomClient(TimeoutError("no participant joined in time"))
+    stt = _FakeSTT()
+    worker = SessionWorker(session_id="sess-8", room_client=room, stt=stt)
+
+    await worker.join(url="ws://livekit.local", token="tok")
+    await asyncio.sleep(0.1)
+
+    assert room.disconnected is True
+    assert stt.closed is True
+
+
+@pytest.mark.asyncio
+async def test_leave_is_idempotent() -> None:
+    room = _FakeRoomClient(frames=[])
+    stt = _FakeSTT()
+    worker = SessionWorker(session_id="sess-9", room_client=room, stt=stt)
+
+    await worker.join(url="ws://livekit.local", token="tok")
+    await worker.leave()
+    await worker.leave()
+
+    assert room.disconnected is True
+    assert stt.closed is True

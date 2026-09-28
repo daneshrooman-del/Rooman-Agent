@@ -84,6 +84,7 @@ class SessionWorker:
         self._audio_pump_task: asyncio.Task[None] | None = None
         self._transcript_pump_task: asyncio.Task[None] | None = None
         self._joined = False
+        self._leaving = False
 
     @property
     def session_id(self) -> str:
@@ -109,6 +110,25 @@ class SessionWorker:
 
         self._audio_pump_task = asyncio.create_task(self._pump_audio_in())
         self._transcript_pump_task = asyncio.create_task(self._pump_transcripts_out())
+        self._audio_pump_task.add_done_callback(self._on_pump_task_done)
+        self._transcript_pump_task.add_done_callback(self._on_pump_task_done)
+
+    def _on_pump_task_done(self, task: asyncio.Task[None]) -> None:
+        """A pump task normally only ends via `leave()` cancelling it. If one instead ends on
+        its own with a real exception (e.g. `audio_frames()` timing out waiting for a
+        participant who never joins), the session is no longer functional -- half its audio
+        pipeline is dead -- so force a full `leave()` rather than let it sit as a silent
+        zombie: still "joined", never speaking again, its other pump task running forever
+        against a channel that will never produce anything.
+        """
+        if task.cancelled() or task.exception() is None or self._leaving:
+            return
+        logger.error(
+            "session_pump_task_died_forcing_leave",
+            session_id=self._session_id,
+            error=str(task.exception()),
+        )
+        asyncio.create_task(self.leave())
 
     async def _pump_audio_in(self) -> None:
         try:
@@ -156,9 +176,16 @@ class SessionWorker:
         await self._room_client.publish_audio(audio)
 
     async def leave(self) -> None:
-        """Stop pumping, flush any buffered audio through STT, and disconnect."""
+        """Stop pumping, flush any buffered audio through STT, and disconnect.
+
+        Idempotent and safe to call more than once -- e.g. once from a caller's own shutdown
+        path, once from `_on_pump_task_done`'s forced cleanup -- a second call is a no-op.
+        """
+        if self._leaving:
+            return
+        self._leaving = True
         for task in (self._audio_pump_task, self._transcript_pump_task):
-            if task is not None:
+            if task is not None and not task.done():
                 task.cancel()
         for task in (self._audio_pump_task, self._transcript_pump_task):
             if task is not None:
@@ -166,6 +193,12 @@ class SessionWorker:
                     await task
                 except asyncio.CancelledError:
                     pass
+                except Exception as exc:
+                    logger.debug(
+                        "session_pump_task_raised_during_leave",
+                        session_id=self._session_id,
+                        error=str(exc),
+                    )
         await self._stt.aclose()
         if self._joined:
             await self._room_client.disconnect()
