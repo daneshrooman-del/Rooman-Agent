@@ -62,6 +62,26 @@ def client(test_engine: Engine, fake_livekit_admin: _FakeLiveKitAdmin) -> Iterat
     app.dependency_overrides.clear()
 
 
+def test_intake_start_without_livekit_credentials_returns_503_not_500(tmp_path: Path) -> None:
+    """Regression test for a bug only found by actually running the app locally (not caught by
+    any other test here, since they all override `get_livekit_admin` entirely and so never
+    exercise its real construction path). `Settings` defaults to empty LiveKit credentials, and
+    `livekit.api.LiveKitAPI.__init__` raises a raw `ValueError` in that case -- that happens
+    during FastAPI's dependency resolution, before the route body's own try/except around
+    `LiveKitAdmin` *method calls* ever runs, so it must be caught in `get_livekit_admin` itself
+    and turned into a clean 503, not surfaced as an unhandled 500."""
+    db_path = tmp_path / "livekit_regression_test.db"
+    engine = get_engine(f"sqlite:///{db_path}")
+    app = create_app()
+    app.dependency_overrides[get_db_engine] = lambda: engine
+    with TestClient(app) as test_client:
+        response = test_client.post("/intake/start", json={"owner": "verify-user"})
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    assert "LiveKit is not configured" in response.json()["detail"]
+
+
 def _make_spec(agent_id: str) -> AgentSpec:
     return AgentSpec(
         agent_id=agent_id,
