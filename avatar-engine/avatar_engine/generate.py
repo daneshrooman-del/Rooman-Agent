@@ -58,10 +58,14 @@ def render(
         raise AvatarNotReady(f"Avatar {avatar_id} is {manifest['status']}" + (f": {manifest.get('error')}" if manifest.get("error") else ""))
 
     job = f"gen_{uuid.uuid4().hex[:10]}"
-    work = settings.outputs_dir / ".work" / job
-    work.mkdir(parents=True)
     out = Path(out_path) if out_path else settings.outputs_dir / f"{avatar_id}_{action.value}_{job}.mp4"
     out.parent.mkdir(parents=True, exist_ok=True)
+    if manifest.get("provider") == "tavus":
+        from .providers import tavus_pipeline
+
+        return tavus_pipeline.render(avatar_id, script_or_audio, action_type, manifest, out, on_progress)
+    work = settings.outputs_dir / ".work" / job
+    work.mkdir(parents=True)
 
     try:
         # speech: user audio, or the script spoken in the twin's cloned voice

@@ -111,7 +111,7 @@ def new_avatar_id() -> str:
     return f"av_{uuid.uuid4().hex[:12]}"
 
 
-def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_id: str | None = None) -> str:
+def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_id: str | None = None, name: str | None = None) -> str:
     video_file = Path(video_file)
     if not video_file.exists():
         raise FileNotFoundError(video_file)
@@ -119,6 +119,10 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
         raise ValueError(f"Unsupported video type '{video_file.suffix}'. Use one of: {', '.join(sorted(media.VIDEO_EXTS))}")
 
     avatar_id = avatar_id or new_avatar_id()
+    if settings.provider == "tavus":
+        from .providers import tavus_pipeline
+
+        return tavus_pipeline.build(video_file, avatar_id, name, on_progress)
     d = settings.avatars_dir / avatar_id
     d.mkdir(parents=True, exist_ok=True)
     source = d / f"source{video_file.suffix.lower()}"

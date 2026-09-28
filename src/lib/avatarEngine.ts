@@ -44,6 +44,9 @@ interface Manifest {
   message?: string
   error?: string
   warnings?: string[]
+  provider?: 'tavus' | 'local'
+  /** 0–100 within the current stage (Tavus face training) */
+  training_progress?: number
 }
 
 export interface EngineJob {
@@ -62,6 +65,7 @@ export const engine = {
     const body = new FormData()
     body.set('video', file)
     body.set('consent', 'true')
+    body.set('name', name)
     const r = await call<{ avatar_id: string }>('/avatars', { method: 'POST', body })
     return {
       id: r.avatar_id,
@@ -79,15 +83,21 @@ export const engine = {
   },
 
   /** Training state mapped onto the UI's avatar fields. */
-  async avatarStatus(id: string): Promise<Pick<Avatar, 'status' | 'trainingProgress' | 'thumbnailUrl'> & { stage: number; error?: string }> {
+  async avatarStatus(
+    id: string,
+  ): Promise<Pick<Avatar, 'status' | 'trainingProgress' | 'thumbnailUrl'> & { stage: number; stages: string[]; message?: string; warnings: string[]; error?: string }> {
     const m = await call<Manifest>(`/avatars/${id}`)
     const total = m.stages.length || 5
     const status = m.status === 'ready' ? 'ready' : m.status === 'failed' ? 'failed' : 'training'
+    const within = (m.training_progress ?? 0) / 100 / total
     return {
       status,
       stage: Math.min(m.stage, total - 1),
-      trainingProgress: status === 'ready' ? 100 : Math.round((m.stage / total) * 100),
-      thumbnailUrl: m.stage >= 1 || status === 'ready' ? `${ENGINE_URL}/avatars/${id}/reference` : undefined,
+      stages: m.stages,
+      message: m.message,
+      warnings: m.warnings ?? [],
+      trainingProgress: status === 'ready' ? 100 : Math.min(99, Math.round((m.stage / total + within) * 100)),
+      thumbnailUrl: m.stage >= 2 || status === 'ready' ? `${ENGINE_URL}/avatars/${id}/reference` : undefined,
       error: m.error,
     }
   },

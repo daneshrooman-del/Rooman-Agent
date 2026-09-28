@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* Don't scan the Python avatar engine (venvs, model weights) for class names */
+@source not "../avatar-engine";
 
 /* ============================================================
    Persona design system — tokens

@@ -8,6 +8,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def _load_dotenv(path: Path) -> None:
+    """Minimal .env loader (KEY=VALUE lines). Real environment variables win."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+_load_dotenv(ROOT / ".env")
+
+
 def _venv_python(name: str) -> Path:
     base = ROOT / ".venvs" / name
     return base / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -40,6 +55,15 @@ class Settings:
     min_video_seconds: float = 6.0
     min_voice_seconds: float = 6.0  # XTTS needs ≥6s of clean speech to clone well
     render_size: int = 256  # SadTalker 256 fits a 4 GB GPU; 512 needs more VRAM
+
+    # "tavus" = hosted Tavus Phoenix API (no local GPU needed); "local" = SadTalker + XTTS-v2 on this machine.
+    # Default: tavus when a TAVUS_API_KEY is configured.
+    provider: str = field(default_factory=lambda: os.environ.get("AVATAR_ENGINE_PROVIDER", "tavus" if os.environ.get("TAVUS_API_KEY") else "local").lower())
+    tavus_api_key: str = field(default_factory=lambda: os.environ.get("TAVUS_API_KEY", ""))
+    tavus_model: str = field(default_factory=lambda: os.environ.get("TAVUS_MODEL", "phoenix-4.5"))
+    # Where Tavus downloads training videos from. Empty = start a Cloudflare quick tunnel automatically.
+    public_base_url: str = field(default_factory=lambda: os.environ.get("AVATAR_ENGINE_PUBLIC_URL", "").rstrip("/"))
+    port: int = field(default_factory=lambda: int(os.environ.get("AVATAR_ENGINE_PORT", "8100")))
 
     @property
     def avatars_dir(self) -> Path:

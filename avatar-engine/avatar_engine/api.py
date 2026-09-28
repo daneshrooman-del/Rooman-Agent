@@ -35,15 +35,17 @@ __all__ = [
 ProgressFn = Callable[[int, str], None]
 
 
-def create_avatar(video_file: str | Path, *, on_progress: ProgressFn | None = None) -> str:
+def create_avatar(video_file: str | Path, *, name: str | None = None, on_progress: ProgressFn | None = None) -> str:
     """Turn a reference video of one person into a reusable digital twin.
 
     The video must show one person, face visible, speaking (≥6 s; 1–3 min is best).
-    Blocks until training finishes (minutes on a small GPU) and returns the avatar_id.
+    Blocks until training finishes and returns the avatar_id.
+    Provider (AVATAR_ENGINE_PROVIDER): "tavus" (hosted, needs TAVUS_API_KEY; the recording should be ~1 min:
+    30 s speaking + 30 s still, 1080p) or "local" (SadTalker + XTTS-v2 on this machine).
 
     Raises IngestError (unusable footage — message is user-facing), WorkerError (model failure).
     """
-    return build_twin(Path(video_file), on_progress=on_progress)
+    return build_twin(Path(video_file), on_progress=on_progress, name=name)
 
 
 def generate(

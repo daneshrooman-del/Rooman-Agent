@@ -27,12 +27,16 @@ from fastapi.responses import FileResponse
 from . import api, media
 from .config import settings
 from .generate import GENERATION_STAGES, render
-from .twin import TRAINING_STAGES, build_twin, new_avatar_id
+from .twin import TRAINING_STAGES as LOCAL_TRAINING_STAGES, build_twin, new_avatar_id
+from .providers.tavus_pipeline import GENERATION_STAGES as TAVUS_GENERATION_STAGES, TRAINING_STAGES as TAVUS_TRAINING_STAGES
+
+TRAINING_STAGES = TAVUS_TRAINING_STAGES if settings.provider == "tavus" else LOCAL_TRAINING_STAGES
 
 app = FastAPI(title="Avatar Engine", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-_pool = ThreadPoolExecutor(max_workers=1)
+# local renders share one GPU; Tavus jobs are network-bound and can overlap
+_pool = ThreadPoolExecutor(max_workers=4 if settings.provider == "tavus" else 1)
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
 
@@ -46,11 +50,11 @@ def _save_upload(upload: UploadFile, suffix: str) -> Path:
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "sadtalker": settings.sadtalker_python.exists(), "xtts": settings.xtts_python.exists()}
+    return {"ok": True, "provider": settings.provider, "tavus_key": bool(settings.tavus_api_key), "sadtalker": settings.sadtalker_python.exists(), "xtts": settings.xtts_python.exists()}
 
 
 @app.post("/avatars", status_code=202)
-def create(video: UploadFile = File(...), consent: bool = Form(False)) -> dict:
+def create(video: UploadFile = File(...), consent: bool = Form(False), name: str | None = Form(None)) -> dict:
     if not consent:
         raise HTTPException(400, "Consent is required: the person in the video must agree to having a digital twin created.")
     suffix = Path(video.filename or "video.mp4").suffix.lower() or ".mp4"
@@ -62,7 +66,7 @@ def create(video: UploadFile = File(...), consent: bool = Form(False)) -> dict:
 
     def run() -> None:
         try:
-            build_twin(path, avatar_id=avatar_id)
+            build_twin(path, avatar_id=avatar_id, name=name)
         finally:
             shutil.rmtree(path.parent, ignore_errors=True)
 
@@ -111,7 +115,8 @@ def generate(
         source = ""
 
     job_id = f"job_{uuid.uuid4().hex[:12]}"
-    job = {"job_id": job_id, "avatar_id": avatar_id, "action_type": action_type, "status": "queued", "stage": 0, "stages": GENERATION_STAGES}
+    stages = TAVUS_GENERATION_STAGES if api.get_avatar(avatar_id).get("provider") == "tavus" else GENERATION_STAGES
+    job = {"job_id": job_id, "avatar_id": avatar_id, "action_type": action_type, "status": "queued", "stage": 0, "stages": stages}
     with _lock:
         _jobs[job_id] = job
 

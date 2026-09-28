@@ -41,7 +41,29 @@ Optional keyword-only extras (safe to ignore): `language="en"`, `out_path=…`, 
 | `GET /jobs/{job_id}` | Progress and the consistency report |
 | `GET /jobs/{job_id}/video` | The finished MP4 |
 
-## Pipeline
+## Providers: Tavus (hosted, no GPU) or local
+
+Set by `AVATAR_ENGINE_PROVIDER`. It defaults to **`tavus`** when `TAVUS_API_KEY` is present in `avatar-engine/.env`, which is git-ignored and must never be committed.
+
+| | `tavus` (default with a key) | `local` |
+|---|---|---|
+| Face and voice model | Tavus Phoenix-4.5 (face and voice learned from the recording) | SadTalker + XTTS-v2 |
+| Hardware | None; a normal laptop works | NVIDIA GPU recommended |
+| Recording | **About 1 minute: 30 s speaking, then 30 s still, lips closed.** 1080p, 25+ fps | 6 s or more; 1–3 min is best |
+| Output | 1080p | Original frame size, 256 px face |
+| Cost | Tavus credits per generated minute | Free (your electricity) |
+
+**How the training video reaches Tavus.** Tavus only trains from a public URL. The engine serves the file from this machine through a **Cloudflare quick tunnel** (`publish.py`), which is free and needs no account.
+- Each file gets a random 128-bit token path that expires in 24 hours and is revoked once Tavus has trained.
+- Unknown or expired tokens return 404.
+- Keep the PC online while training runs.
+- In production, set `AVATAR_ENGINE_PUBLIC_URL` to your own domain, or switch to presigned S3 links.
+
+Tavus videos still pass through our per-frame **identity check** against an anchor computed from your own recording.
+
+Phoenix-4.5 faces are usable within minutes. They carry a preview watermark until Tavus finishes background tuning, which takes a few hours.
+
+## Pipeline (local provider)
 
 1. **Ingestion** (`ingest.py`)
    - Validates the footage: a video stream, audio, enough length, one person.

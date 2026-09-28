@@ -1,8 +1,9 @@
-import { useId } from 'react'
-import { AlertCircle, Clock, Mic, ScanFace, Sparkles, Sun, Video } from 'lucide-react'
+import { useId, useState } from 'react'
+import { AlertCircle, Camera, Clock, Mic, ScanFace, Sparkles, Sun, Upload, Video } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
-import { Field, Input } from '@/components/ui/Form'
+import { Field, Input, SegmentedControl } from '@/components/ui/Form'
+import { CameraRecorder } from './CameraRecorder'
 import { UploadZone } from '@/components/ui/UploadZone'
 import { ReferencePreview, type ReferenceSource } from './ReferencePreview'
 import { StepHeading } from './StepHeading'
@@ -15,7 +16,7 @@ const requirements = [
   { icon: Sun, title: 'Good lighting', text: 'Soft, even light from the front. Avoid strong backlight.' },
   { icon: Mic, title: 'Clean audio', text: 'A quiet room and a close mic so we can learn your voice.' },
   { icon: Video, title: 'Stable camera', text: 'Tripod or steady surface, chest-up framing.' },
-  { icon: Clock, title: '2–5 minutes', text: 'Speak naturally. Longer footage improves likeness and motion.' },
+  { icon: Clock, title: 'About 1 minute', text: 'Talk naturally for 30 seconds, then sit still with lips closed for 30 seconds. 1080p camera.' },
 ]
 
 /** Returns an error message, or null when the file is an acceptable reference video. */
@@ -44,6 +45,7 @@ export function UploadStep({
   focusOnMount?: boolean
 }) {
   const nameId = useId()
+  const [mode, setMode] = useState<'upload' | 'camera'>('upload')
 
   const accept = (files: File[]) => {
     const file = files[0]
@@ -58,7 +60,7 @@ export function UploadStep({
       <StepHeading
         eyebrow="Step 1 · Reference video"
         title="Create your digital twin"
-        description="Upload a short video of yourself. We'll use it to create a reusable AI avatar."
+        description="Upload or record a short video of yourself. We'll use it to create a reusable AI avatar."
         focusOnMount={focusOnMount}
       />
 
@@ -76,13 +78,26 @@ export function UploadStep({
             />
           ) : (
             <>
+              <SegmentedControl
+                label="How to add your video"
+                value={mode}
+                onChange={setMode}
+                className="mb-4"
+                options={[
+                  { value: 'upload', label: 'Upload video', icon: <Upload aria-hidden /> },
+                  { value: 'camera', label: 'Record with camera', icon: <Camera aria-hidden /> },
+                ]}
+              />
+              {mode === 'camera' ? (
+                <CameraRecorder onRecorded={(file) => accept([file])} onCancel={() => setMode('upload')} />
+              ) : (
               <UploadZone
                 size="lg"
                 accept="video/*"
                 onFiles={accept}
                 icon={<Video aria-hidden />}
                 title="Drop your reference video"
-                description="MP4, MOV or WebM · up to 2 GB · 2–5 minutes recommended"
+                description="MP4, MOV or WebM · up to 2 GB · about 1 minute (30 s talking + 30 s still)"
                 className={cn('animate-fade-up', error && 'border-danger/50 bg-danger/[0.035] hover:border-danger/60')}
               >
                 {error && (
@@ -92,6 +107,7 @@ export function UploadStep({
                   </p>
                 )}
               </UploadZone>
+              )}
               <div className="mt-4 flex flex-col items-center justify-between gap-3 rounded-card border border-line bg-white/[0.02] px-4 py-3 sm:flex-row">
                 <p className="text-center text-[13px] text-fg-muted sm:text-left">
                   <span className="font-medium text-fg">Just exploring?</span> Continue with sample footage — nothing is uploaded.

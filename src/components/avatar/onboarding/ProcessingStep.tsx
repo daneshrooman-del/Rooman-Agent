@@ -34,6 +34,10 @@ export function ProcessingStep({
   const job = useSimulatedJob(TRAINING_STAGES.length, { durationMs: DURATION_MS })
   const [avatar, setAvatar] = useState<Avatar | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Real training reports its own stage names (e.g. Tavus: Uploading → Training your face)
+  const [engineStages, setEngineStages] = useState<string[] | null>(null)
+  const [engineStage, setEngineStage] = useState(0)
+  const [engineNote, setEngineNote] = useState<string | null>(null)
   const started = useRef(false)
   const finished = useRef(false)
   const doneTimer = useRef<number | undefined>(undefined)
@@ -52,6 +56,9 @@ export function ProcessingStep({
       try {
         const s = await engine.avatarStatus(a.id)
         updateAvatar(a.id, { status: s.status, trainingProgress: s.trainingProgress, thumbnailUrl: s.thumbnailUrl })
+        setEngineStages(s.stages)
+        setEngineStage(s.stage)
+        setEngineNote(s.warnings[0] ?? null)
         if (s.status === 'failed') {
           window.clearInterval(poll.current)
           setError(s.error ?? 'Training failed')
@@ -118,14 +125,16 @@ export function ProcessingStep({
 
   const done = job.state === 'done'
   const elapsed = elapsedFor(job.progress)
-  const label = done ? 'Avatar created' : TRAINING_STAGES[job.stage]
+  const stages = (real && engineStages) || TRAINING_STAGES
+  const stageIndex = real && engineStages ? engineStage : job.stage
+  const label = done ? 'Avatar created' : stages[stageIndex]
 
   return (
     <section className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16">
       <TrainingStage avatar={{ hue: avatar?.hue ?? 258, name }} scanning={!done} alive className="mx-auto w-full max-w-[340px] sm:max-w-[520px] animate-fade-up">
         <div className="absolute inset-x-5 bottom-5 flex items-end justify-between gap-3 sm:inset-x-7 sm:bottom-7">
           <div className="glass-strong min-w-0 rounded-[12px] px-3 py-2">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-fg-subtle">{done ? 'Complete' : `Stage ${job.stage + 1} of ${TRAINING_STAGES.length}`}</p>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-fg-subtle">{done ? 'Complete' : `Stage ${stageIndex + 1} of ${stages.length}`}</p>
             <p className="truncate text-[13px] font-medium">{label}</p>
           </div>
           <span className="glass-strong tabular rounded-[12px] px-3 py-2 text-[20px] font-semibold">{job.progress}%</span>
@@ -144,17 +153,20 @@ export function ProcessingStep({
           <div className="flex items-end justify-between gap-4">
             <span className="tabular text-gradient text-[56px] font-semibold leading-none tracking-[-0.04em]">{job.progress}%</span>
             <span className="tabular pb-1 text-right text-[12px] text-fg-subtle">
-              {real ? TRAINING_STAGES[job.stage] : `Elapsed ${secs(elapsed)}`}
+              {real ? stages[stageIndex] : `Elapsed ${secs(elapsed)}`}
               <br />
-              {done ? 'Finishing up' : real ? 'Usually 2–6 min on a local GPU' : `About ${secs(DURATION_MS - elapsed)} remaining`}
+              {done ? 'Finishing up' : real ? 'Usually a few minutes' : `About ${secs(DURATION_MS - elapsed)} remaining`}
             </span>
           </div>
           <ProgressBar value={job.progress} label="Avatar training progress" className="mt-4 h-2" />
         </div>
 
         <div className="mt-6 rounded-panel border border-line bg-white/[0.02] p-2">
-          <StageList stages={TRAINING_STAGES} current={job.state === 'idle' ? 0 : job.stage} done={done} />
+          <StageList stages={stages} current={job.state === 'idle' ? 0 : stageIndex} done={done} />
         </div>
+        {engineNote && (
+          <p role="status" className="mt-3 rounded-[12px] border border-warning/25 bg-warning/10 px-3.5 py-2.5 text-[13px] text-warning">{engineNote}</p>
+        )}
 
         <div className="mt-5 flex flex-col gap-3 rounded-card border border-line bg-surface px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
           <p className="flex items-start gap-2.5 text-[13px] text-fg-muted">
