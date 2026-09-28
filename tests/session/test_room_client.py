@@ -110,7 +110,7 @@ class _FakeLocalTrack:
 
 
 def _make_client(
-    room: _FakeRoom,
+    room: Any,
     *,
     audio_stream_factory: Any = None,
     audio_sources: list[_FakeAudioSource] | None = None,

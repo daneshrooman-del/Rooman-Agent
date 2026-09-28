@@ -1,11 +1,20 @@
+import uuid
+from collections.abc import Callable
+
 import pytest
+from pydantic import BaseModel
 
 from trackb.contracts.models import AgentSpec, FlowGraph
 from trackb.intake.graph import IntakeGraph
-from trackb.intake.schema import IntakeSlots
 from trackb.llm.mock import MockLLMProvider
 from trackb.provisioning.interfaces import AvatarAssignment, IntakeSessionResult
-from trackb.session.entrypoint import CLOSING_MESSAGE, IntakeSessionDriver
+from trackb.session.entrypoint import (
+    _UNKNOWN_OWNER,
+    CLOSING_MESSAGE,
+    IntakeSessionDriver,
+    _resolve_owner,
+    _resolve_session_id,
+)
 from trackb.session.worker import TranscribedUtterance
 
 
@@ -40,10 +49,12 @@ def _fake_agent_spec(session_id: str) -> AgentSpec:
     )
 
 
-def _extract_fn_sequence(responses: list[dict[str, object]]) -> object:
+def _extract_fn_sequence(
+    responses: list[dict[str, object]],
+) -> Callable[[str, type[BaseModel]], BaseModel]:
     calls = {"n": 0}
 
-    def _extract(prompt: str, schema: type[IntakeSlots]) -> IntakeSlots:
+    def _extract(prompt: str, schema: type[BaseModel]) -> BaseModel:
         index = min(calls["n"], len(responses) - 1)
         calls["n"] += 1
         return schema.model_validate(responses[index])
@@ -175,3 +186,60 @@ async def test_multi_turn_conversation_reaching_completed_provisions_exactly_onc
         TranscribedUtterance(session_id="sess-3", text="one more thing", is_final=True)
     )
     assert len(provisioning_calls) == 1
+
+
+class _FakeJob:
+    def __init__(self, id: str = "", participant: object = None) -> None:  # noqa: A002
+        self.id = id
+        self.participant = participant
+
+
+class _FakeParticipant:
+    def __init__(self, identity: str) -> None:
+        self.identity = identity
+
+
+class _FakeJobContextForResolve:
+    def __init__(
+        self, *, room_name: str = "", job_id: str = "", participant: object = None
+    ) -> None:
+        self.room = _FakeRoomForResolve(room_name)
+        self.job = _FakeJob(id=job_id, participant=participant)
+
+
+class _FakeRoomForResolve:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+def test_resolve_session_id_prefers_room_name_over_job_id() -> None:
+    ctx = _FakeJobContextForResolve(room_name="intake-session-abc", job_id="livekit-job-xyz")
+
+    assert _resolve_session_id(ctx) == "session-abc"  # type: ignore[arg-type]
+
+
+def test_resolve_session_id_falls_back_to_job_id_for_a_non_intake_room() -> None:
+    ctx = _FakeJobContextForResolve(room_name="some-other-room", job_id="livekit-job-xyz")
+
+    assert _resolve_session_id(ctx) == "livekit-job-xyz"  # type: ignore[arg-type]
+
+
+def test_resolve_session_id_falls_back_to_random_uuid_when_nothing_available() -> None:
+    ctx = _FakeJobContextForResolve(room_name="", job_id="")
+
+    session_id = _resolve_session_id(ctx)  # type: ignore[arg-type]
+
+    assert session_id
+    uuid.UUID(session_id)
+
+
+def test_resolve_owner_reads_job_participant_identity() -> None:
+    ctx = _FakeJobContextForResolve(participant=_FakeParticipant(identity="owner-42"))
+
+    assert _resolve_owner(ctx) == "owner-42"  # type: ignore[arg-type]
+
+
+def test_resolve_owner_falls_back_to_unknown_when_no_participant() -> None:
+    ctx = _FakeJobContextForResolve()
+
+    assert _resolve_owner(ctx) == _UNKNOWN_OWNER  # type: ignore[arg-type]

@@ -55,8 +55,27 @@ class LiveKitAdminError(Exception):
     """Raised when creating a room/dispatch, or minting a join token, fails."""
 
 
+ROOM_NAME_PREFIX = "intake-"
+
+
 def room_name_for_session(session_id: str) -> str:
-    return f"intake-{session_id}"
+    return f"{ROOM_NAME_PREFIX}{session_id}"
+
+
+def session_id_from_room_name(room_name: str) -> str | None:
+    """Inverse of `room_name_for_session`.
+
+    Used on the worker side (`session/entrypoint.py`) to recover the API-issued
+    `session_id` from `ctx.room.name` -- the room name is the correlation key
+    `POST /intake/start` actually created, unlike LiveKit's own internal job id,
+    which is a different identifier space entirely. Returns `None` for a room
+    name this module didn't mint (e.g. a conversation room from a different
+    flow), so callers can fall back appropriately instead of returning a
+    silently wrong session_id.
+    """
+    if not room_name.startswith(ROOM_NAME_PREFIX):
+        return None
+    return room_name[len(ROOM_NAME_PREFIX) :]
 
 
 class LiveKitAdmin:

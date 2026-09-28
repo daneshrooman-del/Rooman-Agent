@@ -33,6 +33,7 @@ from trackb.llm.mock import MockLLMProvider
 from trackb.provisioning.interfaces import AvatarAssignment, IntakeSessionResult
 from trackb.provisioning.orchestrator import run_intake_session
 from trackb.session.concurrency import SessionConcurrencyGuard
+from trackb.session.livekit_admin import session_id_from_room_name
 from trackb.session.room_client import LiveKitRoomClient
 from trackb.session.worker import SessionWorker, TranscribedUtterance
 from trackb.stt.whisper_stt import WhisperSTT
@@ -173,12 +174,29 @@ class IntakeSessionDriver:
 
 
 def _resolve_session_id(ctx: JobContext) -> str:
+    """Prefer the room name's encoded session_id over LiveKit's own job id.
+
+    `ctx.room.name` is `room_name_for_session(session_id)` from
+    `session/livekit_admin.py` -- the correlation key `POST /intake/start`
+    actually handed back to the caller. `ctx.job.id` is LiveKit's internal job
+    identifier, a different id space entirely; using it here would make
+    `AgentSpec.created_from_session_id` untraceable back to the API session
+    that started it.
+    """
+    room_name = getattr(ctx.room, "name", "") or ""
+    session_id = session_id_from_room_name(room_name) if room_name else None
+    if session_id:
+        return session_id
+
     job_id = getattr(ctx.job, "id", "") or ""
     if job_id:
+        logger.warning(
+            "session_id_fallback_to_job_id",
+            room_name=room_name,
+            reason="room name did not match the intake room naming convention",
+        )
         return job_id
-    room_name = getattr(ctx.room, "name", "") or ""
-    if room_name:
-        return room_name
+
     logger.warning("session_id_fallback_to_random_uuid")
     return str(uuid.uuid4())
 
