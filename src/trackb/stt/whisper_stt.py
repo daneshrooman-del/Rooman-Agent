@@ -13,6 +13,16 @@ Audio in is assumed to be raw 16-bit signed PCM, mono, at `sample_rate` (LiveKit
 frames are delivered in this shape). Chunks are buffered until `chunk_seconds` worth of audio
 has accumulated (or `flush()` is called -- e.g. on end-of-utterance from an upstream VAD/turn
 detector), then handed to the blocking faster-whisper model on a worker thread.
+
+Turn/end-of-utterance detection: rather than depending on a separate VAD model (e.g.
+`livekit-plugins-silero`, which pulls in torch and is too heavy for this project's memory
+constraints), this wrapper uses faster-whisper's own built-in `vad_filter=True` option --
+bundled with faster-whisper itself via a lightweight onnxruntime Silero VAD, no extra heavy
+dependency -- to silence-filter each buffered chunk before transcribing it. An utterance is
+accumulated across consecutive chunks that produce real speech; the first chunk that comes
+back silent (empty text) after real speech was seen is treated as the end of that utterance
+and flushes it as `is_final=True`. This is the "VAD/turn detector" referenced above, not a
+placeholder for one still to be built.
 """
 
 from __future__ import annotations
@@ -85,6 +95,7 @@ class WhisperSTT:
         transcribe_timeout_seconds: float = 10.0,
         max_attempts: int = 3,
         language: str | None = None,
+        vad_filter: bool = True,
     ) -> None:
         settings = settings or get_settings()
         self._model_size = settings.whisper_model_size
@@ -95,12 +106,16 @@ class WhisperSTT:
         self._transcribe_timeout_seconds = transcribe_timeout_seconds
         self._max_attempts = max_attempts
         self._language = language
+        self._vad_filter = vad_filter
 
         self._model = model
         self._buffer = bytearray()
         self._queue: asyncio.Queue[TranscriptEvent] = asyncio.Queue()
         self._closed = False
         self._lock = asyncio.Lock()
+
+        self._pending_utterance: list[str] = []
+        """Text accumulated across consecutive speech-containing chunks, not yet finalized."""
 
     @property
     def model_size(self) -> str:
@@ -130,17 +145,18 @@ class WhisperSTT:
         async with self._lock:
             self._buffer.extend(chunk)
             if len(self._buffer) >= self._chunk_bytes:
-                await self._transcribe_buffered(is_final=False)
+                await self._process_chunk(force_final=False)
 
     async def flush(self) -> None:
-        """Force transcription of whatever's buffered, marked as a final result.
+        """Force whatever's buffered to be transcribed and the current utterance finalized.
 
-        Call this on end-of-utterance (e.g. a VAD/turn-detector signal upstream), or before
-        closing the stream, so a short trailing chunk isn't silently dropped.
+        Call this on an explicit end-of-utterance signal, or before closing the stream, so a
+        short trailing chunk isn't silently dropped. In normal operation this isn't needed --
+        `_process_chunk` already finalizes on its own once silence follows speech -- but it's
+        here for a caller that has its own (e.g. external) end-of-turn signal.
         """
         async with self._lock:
-            if self._buffer:
-                await self._transcribe_buffered(is_final=True)
+            await self._process_chunk(force_final=True)
 
     async def events(self) -> AsyncIterator[TranscriptEvent]:
         """Async iterator of `TranscriptEvent`s, in the order they were produced."""
@@ -155,18 +171,44 @@ class WhisperSTT:
 
     async def aclose(self) -> None:
         async with self._lock:
-            if self._buffer:
-                await self._transcribe_buffered(is_final=True)
+            await self._process_chunk(force_final=True)
             self._closed = True
 
-    async def _transcribe_buffered(self, *, is_final: bool) -> None:
+    async def _process_chunk(self, *, force_final: bool) -> None:
+        """Transcribe whatever's currently buffered (if any) and drive the
+        accumulate-until-silence turn-detection state machine:
+
+        - Real speech in this chunk -> appended to the in-progress utterance. Reported as an
+          interim (`is_final=False`) update unless `force_final` says to finalize right away
+          (an explicit `flush()`/`aclose()`, not the normal per-chunk path).
+        - No speech in this chunk (faster-whisper's own `vad_filter` returned nothing) -> the
+          in-progress utterance, if any, just ended; finalize it. This is what lets a plain
+          silence-after-speech pattern in the raw audio act as the turn detector, without a
+          separate VAD model.
+        """
         audio_bytes = bytes(self._buffer)
         self._buffer.clear()
-        text = await self._run_transcription(audio_bytes)
+        text = await self._run_transcription(audio_bytes) if audio_bytes else ""
+
         if text:
-            event = TranscriptEvent(text=text, is_final=is_final)
+            self._pending_utterance.append(text)
+
+        if text and not force_final:
+            combined = " ".join(self._pending_utterance)
+            event = TranscriptEvent(text=combined, is_final=False)
             await self._queue.put(event)
-            logger.info("stt_transcript", text=text, is_final=is_final)
+            logger.info("stt_transcript", text=combined, is_final=False)
+        else:
+            await self._finalize_pending()
+
+    async def _finalize_pending(self) -> None:
+        if not self._pending_utterance:
+            return
+        combined = " ".join(self._pending_utterance)
+        self._pending_utterance.clear()
+        event = TranscriptEvent(text=combined, is_final=True)
+        await self._queue.put(event)
+        logger.info("stt_transcript", text=combined, is_final=True)
 
     async def _run_transcription(self, audio_bytes: bytes) -> str:
         try:
@@ -200,6 +242,8 @@ class WhisperSTT:
     def _transcribe_sync(self, audio_bytes: bytes) -> str:
         model = self._ensure_model()
         audio_array = _pcm16_bytes_to_float32(audio_bytes)
-        segments, _info = model.transcribe(audio_array, language=self._language)
+        segments, _info = model.transcribe(
+            audio_array, language=self._language, vad_filter=self._vad_filter
+        )
         text: str = " ".join(str(segment.text).strip() for segment in segments).strip()
         return text
