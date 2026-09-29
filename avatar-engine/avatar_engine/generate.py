@@ -148,24 +148,52 @@ def _render_magichour(d: Path, speech: Path, work: Path, on_progress: Callable[[
 
     mode = settings.magichour_mode
     seconds = media.probe(speech)["duration"]
-    need = mh.estimate_credits(seconds, mode)
     have = mh.credits()
-    if need > have:  # check before spending anything
-        per_s = mh.CREDITS_PER_SECOND[mode]
-        raise mh.NotEnoughCredits(
-            f"This {seconds:.1f}s video needs about {need} Magic Hour credits but the account has {have}. "
-            f"Shorten the script to about {max(1, have // per_s)} seconds or add credits."
-        )
+    notes: list[str] = []
+    # Fit the video to the credits available — checked before anything is spent:
+    # preferred mode -> cheaper "prompted" mode -> trim the speech to what the credits cover.
+    if mh.estimate_credits(seconds, mode) > have and mode != "prompted" and mh.estimate_credits(seconds, "prompted") <= have:
+        notes.append(f"Used the cheaper 'prompted' mode to fit {have} credits (slightly lower likeness).")
+        mode = "prompted"
+    if mh.estimate_credits(seconds, mode) > have:
+        cheapest = "prompted"
+        affordable = have // mh.CREDITS_PER_SECOND[cheapest]
+        if affordable < 1:
+            raise mh.NotEnoughCredits(f"The Magic Hour account has {have} credits — not enough for even 1 second of video. Add credits to continue.")
+        trimmed = work / "speech_fit.wav"
+        media.ffmpeg("-i", speech, "-t", str(affordable), "-af", f"afade=t=out:st={max(0, affordable - 0.3)}:d=0.3", trimmed)
+        notes.append(f"Only {have} credits left: the {seconds:.1f}s script was cut to the first {affordable}s.")
+        speech, seconds, mode = trimmed, float(affordable), cheapest
     if on_progress:
         on_progress(2, f"{GENERATION_STAGES[2]} · uploading")
     mp3 = work / "speech.mp3"
     media.ffmpeg("-i", speech, "-vn", "-ac", "1", "-ar", "44100", "-b:a", "128k", mp3)
     image_fp = mh.upload(d / "reference.png", "image")
     audio_fp = mh.upload(mp3, "audio")
-    job = mh.create_talking_photo(image_fp, audio_fp, seconds, mode=mode, name=f"{d.name} talk")
+    try:
+        job = mh.create_talking_photo(image_fp, audio_fp, seconds, mode=mode, name=f"{d.name} talk")
+    except mh.NotEnoughCredits as e:
+        # Magic Hour quotes the real price in its 402 ("Rendering will cost N credits") without charging:
+        # derive the true per-second rate, trim the speech to what the balance covers, retry once.
+        m = re.search(r"cost (\d+) credits", str(e))
+        if not m:
+            raise
+        rate = int(m.group(1)) / max(seconds, 0.1)
+        affordable = round(have / rate - 0.05, 1)
+        if affordable < 1:
+            raise mh.NotEnoughCredits(f"Magic Hour quotes {m.group(1)} credits for {seconds:.1f}s; {have} credits covers under 1 second. Add credits to continue.") from e
+        trimmed = work / "speech_quote.wav"
+        media.ffmpeg("-i", speech, "-t", str(affordable), "-af", f"afade=t=out:st={max(0, affordable - 0.3)}:d=0.3", trimmed)
+        notes.append(f"Magic Hour's actual price is ~{rate:.0f} credits/s: the video was cut to {affordable}s to fit {have} credits.")
+        speech, seconds = trimmed, affordable
+        mp3 = work / "speech_quote.mp3"
+        media.ffmpeg("-i", speech, "-vn", "-ac", "1", "-ar", "44100", "-b:a", "128k", mp3)
+        audio_fp = mh.upload(mp3, "audio")
+        job = mh.create_talking_photo(image_fp, audio_fp, seconds, mode=mode, name=f"{d.name} talk")
     if on_progress:
         on_progress(2, f"{GENERATION_STAGES[2]} · rendering on Magic Hour")
     v = mh.wait_video(job["id"])
     mh.download(v["downloads"][0]["url"], work / "raw.mp4")
     media.mux(work / "raw.mp4", speech, work / "final.mp4")
-    return {"renderer": "magichour", "magichour_video_id": job["id"], "credits_charged": v.get("credits_charged", job.get("credits_charged"))}
+    return {"renderer": "magichour", "magichour_mode": mode, "magichour_video_id": job["id"],
+            "credits_charged": v.get("credits_charged", job.get("credits_charged")), "credit_notes": notes}
