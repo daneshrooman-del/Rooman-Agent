@@ -54,6 +54,8 @@ export interface EngineJob {
   status: 'queued' | 'running' | 'done' | 'failed' | 'rejected'
   stage: number
   stages: string[]
+  /** 0–100 within the current stage (e.g. the renderer's own progress) */
+  stage_progress?: number
   message?: string
   error?: string
   duration_sec?: number
@@ -142,6 +144,6 @@ export const engine = {
       return { status: 'ready', progress: 100, url: `${ENGINE_URL}/jobs/${job.job_id}/video`, durationSec: Math.round(job.duration_sec ?? 0), consistencyVerified: job.consistency?.verdict === 'verified' }
     }
     if (job.status === 'failed' || job.status === 'rejected') return { status: 'failed' }
-    return { status: 'generating', progress: Math.round((job.stage / total) * 100) }
+    return { status: 'generating', progress: Math.min(99, Math.round(((job.stage + (job.stage_progress ?? 0) / 100) / total) * 100)) }
   },
 }

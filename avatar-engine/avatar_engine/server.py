@@ -13,6 +13,7 @@ Heavy work runs on a single background worker thread (one GPU job at a time).
 """
 from __future__ import annotations
 
+import re
 import shutil
 import tempfile
 import threading
@@ -153,7 +154,9 @@ def generate(
         _jobs[job_id] = job
 
     def progress(i: int, msg: str) -> None:
-        job.update(status="running", stage=i, message=msg)
+        # "Generating motion · 45%" -> progress within the current stage
+        m = re.search(r"· (\d+)%$", msg)
+        job.update(status="running", stage=i, message=msg, stage_progress=int(m.group(1)) if m else 0)
 
     def run() -> Path:
         try:

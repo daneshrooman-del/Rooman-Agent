@@ -26,6 +26,13 @@ export const ASPECTS: { value: AspectRatio; label: string; hint: string }[] = [
 
 export const ASPECT_VALUE: Record<AspectRatio, number> = { '16:9': 16 / 9, '9:16': 9 / 16, '1:1': 1 }
 
+/** Real avatars speak the text word for word (no LLM rewrites it) — so examples are full scripts. */
+export const EXAMPLE_SCRIPTS = [
+  "Hi, I'm your AI presenter. Welcome to Rooman! In the next minute I'll show you how our platform helps teams hire and train faster.",
+  'Welcome aboard! We are thrilled to have you as a customer. If you need anything at all, our team is here to help, every step of the way.',
+  'Hello everyone. Today I want to share three quick updates about our product, and why they matter for your business.',
+]
+
 export const EXAMPLE_PROMPTS = [
   'Introduce our company.',
   'Walk toward the camera and explain the product.',

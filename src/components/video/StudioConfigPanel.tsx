@@ -6,7 +6,7 @@ import { useWorkspace } from '@/state/workspace'
 import { ChoiceChips, Field, SegmentedControl, Select, Textarea } from '@/components/ui/Form'
 import { AvatarPicker } from '@/components/avatar/AvatarPicker'
 import { SceneTiles } from './SceneTiles'
-import { ACTIONS, ASPECTS, EXAMPLE_PROMPTS, LANGUAGES, PROMPT_MAX, PROMPT_MIN } from './studio'
+import { ACTIONS, ASPECTS, EXAMPLE_PROMPTS, EXAMPLE_SCRIPTS, LANGUAGES, PROMPT_MAX, PROMPT_MIN } from './studio'
 
 export interface StudioSettings {
   avatarId: string
@@ -49,6 +49,9 @@ export function StudioConfigPanel({
   const langId = useId()
   const avatar = avatarById(value.avatarId)
   const len = value.prompt.trim().length
+  // A trained twin speaks the text verbatim; demo avatars simulate a directed video.
+  const verbatim = !!avatar?.engine
+  const examples = verbatim ? EXAMPLE_SCRIPTS : EXAMPLE_PROMPTS
 
   const voices = data?.voices ?? []
   const own = voices.filter((v) => v.avatarId === value.avatarId)
@@ -91,7 +94,7 @@ export function StudioConfigPanel({
 
       <Section step={2} title="Direction">
         <Field
-          label="What should your avatar do?"
+          label={verbatim ? "What should your avatar say?" : "What should your avatar do?"}
           htmlFor={promptId}
           trailing={
             <span className={cn('tabular text-[12px]', len > 0 && len < PROMPT_MIN ? 'text-warning' : 'text-fg-subtle')} aria-live="polite">
@@ -104,12 +107,15 @@ export function StudioConfigPanel({
             value={value.prompt}
             maxLength={PROMPT_MAX}
             onChange={(e) => onChange({ prompt: e.target.value })}
-            placeholder="Describe what you want your avatar to say or do..."
+            placeholder={verbatim ? "Type the exact words your avatar will speak…" : "Describe what you want your avatar to say or do..."}
             className="min-h-36 text-[15px]"
           />
         </Field>
+        {verbatim && (
+          <p className="mt-2 text-[12px] text-fg-subtle">Your avatar reads this word for word in its voice — about 2.5 words per second.</p>
+        )}
         <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Example prompts">
-          {EXAMPLE_PROMPTS.map((p) => (
+          {examples.map((p) => (
             <button
               key={p}
               type="button"
@@ -120,7 +126,7 @@ export function StudioConfigPanel({
               )}
             >
               <Sparkles className="size-3 shrink-0 text-accent" aria-hidden />
-              {p}
+              {verbatim && p.length > 60 ? `${p.slice(0, 58)}…` : p}
             </button>
           ))}
         </div>

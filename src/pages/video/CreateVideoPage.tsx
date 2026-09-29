@@ -54,7 +54,8 @@ export default function CreateVideoPage() {
 
   const avatar = avatarById(s.avatarId)
   const video = data?.videos.find((v) => v.id === videoId)
-  const estimate = estimateDuration(s.prompt, s.action)
+  // real twins speak the script verbatim (~2.5 words/s); demo avatars use the directed-video estimate
+  const estimate = avatar?.engine ? Math.max(2, Math.round(s.prompt.trim().split(/\s+/).filter(Boolean).length / 2.5)) : estimateDuration(s.prompt, s.action)
   const credits = creditCost(estimate)
   const promptOk = s.prompt.trim().length >= PROMPT_MIN
   const generating = phase === 'generating'

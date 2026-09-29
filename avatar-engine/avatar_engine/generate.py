@@ -1,6 +1,7 @@
 """Stage 3 + 4 — render an action with the twin, then verify identity."""
 from __future__ import annotations
 
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -17,6 +18,7 @@ from .workers.runner import run_worker
 
 GENERATION_STAGES = ["Preparing your avatar", "Generating speech", "Generating motion", "Checking identity consistency", "Finalizing video"]
 MAX_SCRIPT_CHARS = 3000
+_TQDM = re.compile(r"(Face Renderer|seamlessClone):+\s*(\d+)%")
 
 
 class AvatarNotReady(RuntimeError):
@@ -86,6 +88,19 @@ def render(
         # motion: animate the twin's prepared 3D face with the speech
         stage(2)
         prep = media.read_json(d / "sadtalker" / "prep.json")
+        last = [-1]
+
+        def motion_log(line: str) -> None:
+            # SadTalker's tqdm bars: rendering is ~85% of the step, pasting back into the frame the rest
+            m = _TQDM.search(line)
+            if not m or not on_progress:
+                return
+            pct = int(m.group(2))
+            overall = round(pct * 0.85) if m.group(1) == "Face Renderer" else 85 + round(pct * 0.15)
+            if overall >= last[0] + 2:
+                last[0] = overall
+                on_progress(2, f"{GENERATION_STAGES[2]} · {overall}%")
+
         with GPU_LOCK:
             run_worker(
                 settings.sadtalker_python, "sadtalker_worker.py",
@@ -96,6 +111,7 @@ def render(
                     "use_ref_pose": spec.use_ref_pose and bool(prep.get("ref_coeff")), "expression_scale": spec.expression_scale,
                 },
                 cwd=settings.sadtalker_dir,
+                on_log=motion_log,
             )
         media.mux(work / "raw.mp4", speech, work / "final.mp4")  # full-quality speech instead of the 16 kHz drive track
 
