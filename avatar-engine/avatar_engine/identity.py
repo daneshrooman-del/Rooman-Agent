@@ -45,11 +45,26 @@ def _detector(w: int, h: int) -> cv2.FaceDetectorYN:
     return cv2.FaceDetectorYN.create(str(path), "", (w, h), score_threshold=0.8, nms_threshold=0.3, top_k=10)
 
 
+DETECT_MAX_SIDE = 640
+
+
 def detect(frame_bgr: np.ndarray) -> list[Face]:
+    """Faces in `frame_bgr`, in its own pixel coordinates, largest first.
+
+    YuNet misses very large faces (a close-up at 1080p+ can be ~900 px wide), so
+    detection runs on a copy whose long side is ≤ 640 px and the box/landmarks
+    are scaled back up — embed() then aligns on the full-resolution frame.
+    """
     h, w = frame_bgr.shape[:2]
-    _, rows = _detector(w, h).detect(frame_bgr)
+    s = min(1.0, DETECT_MAX_SIDE / max(h, w))
+    small = cv2.resize(frame_bgr, (max(1, round(w * s)), max(1, round(h * s))), interpolation=cv2.INTER_AREA) if s < 1 else frame_bgr
+    sh, sw = small.shape[:2]
+    _, rows = _detector(sw, sh).detect(small)
     if rows is None:
         return []
+    if s < 1:
+        rows = rows.copy()
+        rows[:, :14] /= s  # box + 5 landmarks back to full-resolution coordinates
     faces = [
         Face(box=tuple(int(v) for v in r[:4]), score=float(r[14]), landmarks=r[4:14].reshape(5, 2), raw=r)
         for r in rows

@@ -120,7 +120,11 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
 
     avatar_id = avatar_id or new_avatar_id()
     fallback_note: str | None = None
-    if settings.provider == "tavus":
+    # Set after Tavus answers 402 once: skip the doomed upload (it costs minutes of transcoding) next time.
+    plan_blocked = settings.data_dir / ".tavus_no_custom_faces"
+    if settings.provider == "tavus" and plan_blocked.exists() and settings.sadtalker_python.exists():
+        fallback_note = "Your Tavus plan doesn't include custom face training, so this avatar was trained locally (free). Delete data/.tavus_no_custom_faces after upgrading."
+    elif settings.provider == "tavus":
         from .providers import tavus_pipeline
         from .providers.tavus import TavusPlanError
 
@@ -129,6 +133,8 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
         except TavusPlanError:
             # e.g. the free Tavus plan has no custom face trainings — train the twin locally instead
             fallback_note = "Your Tavus plan doesn't include custom face training, so this avatar was trained locally (free, slower)."
+            plan_blocked.parent.mkdir(parents=True, exist_ok=True)
+            plan_blocked.write_text("Tavus returned 402 for POST /v2/faces. Delete this file after upgrading the Tavus plan.\n")
             if not settings.sadtalker_python.exists():
                 raise
     d = settings.avatars_dir / avatar_id

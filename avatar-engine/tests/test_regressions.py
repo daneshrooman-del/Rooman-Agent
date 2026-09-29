@@ -79,3 +79,15 @@ def test_webm_without_duration_header_is_measured(face_a, speech_wav, tmp_path):
     # live-style muxing (no seek back to write the duration) mimics MediaRecorder output
     media.ffmpeg("-i", raw, "-i", speech_wav, "-c:v", "libvpx", "-b:v", "500k", "-c:a", "libopus", "-shortest", "-live", "1", "-f", "webm", webm)
     assert media.probe(Path(webm))["duration"] > 2
+
+
+def test_very_large_face_is_detected(face_a):
+    """Close-up phone video upscaled to 1080x1920: faces ~900 px wide were missed by YuNet."""
+    img = cv2.imread(str(face_a))
+    big = cv2.resize(img, None, fx=2400 / max(img.shape[:2]), fy=2400 / max(img.shape[:2]), interpolation=cv2.INTER_CUBIC)
+    faces = identity.detect(big)
+    assert faces, "large face must be found"
+    small_faces = identity.detect(img)
+    ratio = faces[0].box[2] / small_faces[0].box[2]
+    assert 0.8 * big.shape[1] / img.shape[1] < ratio < 1.2 * big.shape[1] / img.shape[1], "box is in full-resolution coordinates"
+    assert identity.similarity(identity.embed(big, faces[0]), identity.embed(img, small_faces[0])) > 0.6

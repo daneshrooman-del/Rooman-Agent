@@ -53,7 +53,7 @@ def _prepare_training_video(src: Path, out: Path) -> tuple[Path, list[str]]:
         warnings.append(f"Your camera recorded {short_side}p; Tavus asks for 1080p. It was upscaled, so the avatar may look softer — use a 1080p camera for best results.")
         scale = "scale=-2:1080:flags=lanczos," if info["height"] <= info["width"] else "scale=1080:-2:flags=lanczos,"
     media.ffmpeg(
-        "-i", src, "-vf", f"{scale}fps=30,format=yuv420p", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-i", src, "-vf", f"{scale}fps=30,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out,
     )
     if out.stat().st_size > MAX_BYTES:
