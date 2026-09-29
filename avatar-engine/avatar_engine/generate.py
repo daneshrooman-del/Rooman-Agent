@@ -81,6 +81,10 @@ def render(
             if len(text) > MAX_SCRIPT_CHARS:
                 raise ValueError(f"Script is {len(text)} characters — keep it under {MAX_SCRIPT_CHARS}.")
             speech = work / "speech.wav"
+            if not (d / "voice.pt").exists():  # face-only avatar: speak with the default stock voice
+                from .photo_twin import use_stock_voice
+
+                use_stock_voice(d / "voice.pt")
             with GPU_LOCK:
                 run_worker(settings.xtts_python, "xtts_worker.py", {"op": "speak", "text": text, "language": language, "voice": d / "voice.pt", "out": speech}, env=_xtts_env())
         drive = media.to_wav(speech, work / "drive_16k.wav", 16000)  # SadTalker's audio encoder expects 16 kHz

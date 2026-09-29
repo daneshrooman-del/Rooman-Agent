@@ -63,6 +63,8 @@ class Settings:
     tavus_model: str = field(default_factory=lambda: os.environ.get("TAVUS_MODEL", "phoenix-4.5"))
     # Where Tavus downloads training videos from. Empty = start a Cloudflare quick tunnel automatically.
     public_base_url: str = field(default_factory=lambda: os.environ.get("AVATAR_ENGINE_PUBLIC_URL", "").rstrip("/"))
+    # Voice cloning at avatar creation is off for now: avatars are face-only and videos use a stock voice.
+    clone_voice: bool = field(default_factory=lambda: os.environ.get("AVATAR_ENGINE_CLONE_VOICE") == "1")
     port: int = field(default_factory=lambda: int(os.environ.get("AVATAR_ENGINE_PORT", "8100")))
 
     @property

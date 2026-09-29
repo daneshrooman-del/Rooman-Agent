@@ -6,6 +6,8 @@ import { buttonStyles } from '@/components/ui/Button'
 import { UploadZone } from '@/components/ui/UploadZone'
 
 export const MAX_PHOTOS = 5
+/** Voice cloning is off for now — avatars are face-only and videos use the default voice. */
+const VOICE_CLIPS_ENABLED = false
 const IMAGE = /\.(jpe?g|png|webp|bmp)$/i
 const MAX_PHOTO_BYTES = 25 * 1024 ** 2
 
@@ -93,7 +95,8 @@ export function PhotoPicker({
         </UploadZone>
       )}
 
-      {/* optional voice */}
+      {/* optional voice (hidden while voice cloning is off) */}
+      {VOICE_CLIPS_ENABLED && (
       <div className="flex flex-col gap-3 rounded-card border border-line bg-white/[0.02] p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-line-strong bg-white/[0.04]">
@@ -127,6 +130,7 @@ export function PhotoPicker({
           </label>
         )}
       </div>
+      )}
     </div>
   )
 }

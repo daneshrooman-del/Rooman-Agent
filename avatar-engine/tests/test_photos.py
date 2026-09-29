@@ -58,6 +58,7 @@ def test_bad_voice_clip_falls_back_to_stock_voice(face_a, tmp_path, monkeypatch)
         return {"first_coeff": "x", "crop_pic": "y"}
 
     monkeypatch.setattr(photo_twin, "run_worker", fake_worker)
+    object.__setattr__(photo_twin.settings, "clone_voice", True)
     monkeypatch.setattr(photo_twin.media, "extract_clean_audio", lambda src, out: out)
     monkeypatch.setattr(photo_twin.media, "probe", lambda p: {"duration": 20.0})
     clip = tmp_path / "voice.wav"
@@ -67,4 +68,23 @@ def test_bad_voice_clip_falls_back_to_stock_voice(face_a, tmp_path, monkeypatch)
     assert m["status"] == "ready"
     assert m["voice"]["type"] == "stock"
     assert any("stock voice" in w for w in m["warnings"])
+    object.__setattr__(photo_twin.settings, "clone_voice", False)
     assert calls == ["prepare", "clone", "stock"]
+
+
+def test_voice_is_skipped_by_default(face_a, monkeypatch):
+    """Voice is off for now: a photo avatar is face-only and never runs the voice model."""
+    from avatar_engine import media, photo_twin
+
+    calls = []
+
+    def fake_worker(python, script, req, **kw):
+        calls.append(req["op"])
+        Path(req["out_dir"]).mkdir(parents=True, exist_ok=True)
+        return {"first_coeff": "x", "crop_pic": "y"}
+
+    monkeypatch.setattr(photo_twin, "run_worker", fake_worker)
+    avatar_id = photo_twin.build_from_photos([face_a])
+    m = media.read_json(photo_twin.settings.avatars_dir / avatar_id / "manifest.json")
+    assert m["status"] == "ready" and calls == ["prepare"]
+    assert "Preparing voice" not in m["stages"]

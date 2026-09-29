@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import { AlertCircle, Camera, Clock, Images, Mic, ScanFace, Sparkles, Sun, Upload, Video } from 'lucide-react'
+import { AlertCircle, Camera, Clock, Images, ScanFace, Sparkles, Sun, Upload, Video } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, SegmentedControl } from '@/components/ui/Form'
@@ -15,8 +15,7 @@ const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi)$/i
 const requirements = [
   { icon: ScanFace, title: 'Clear face', text: 'Face the camera, unobstructed — no sunglasses or hands over your face.' },
   { icon: Sun, title: 'Good lighting', text: 'Soft, even light from the front. Avoid strong backlight.' },
-  { icon: Mic, title: 'Clean audio', text: 'A quiet room and a close mic so we can learn your voice.' },
-  { icon: Video, title: 'Stable camera', text: 'Tripod or steady surface, chest-up framing.' },
+    { icon: Video, title: 'Stable camera', text: 'Tripod or steady surface, chest-up framing.' },
   { icon: Clock, title: 'About 1 minute', text: 'Talk naturally for 30 seconds, then sit still with lips closed for 30 seconds. 1080p camera.' },
 ]
 

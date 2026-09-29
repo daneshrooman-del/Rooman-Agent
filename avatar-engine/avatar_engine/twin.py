@@ -30,7 +30,8 @@ from .config import settings
 from .ingest import IngestResult, ingest
 from .workers.runner import run_worker
 
-TRAINING_STAGES = ["Analyzing video", "Extracting identity", "Learning facial motion", "Preparing voice", "Creating avatar"]
+TRAINING_STAGES_WITH_VOICE = ["Analyzing video", "Extracting identity", "Learning facial motion", "Preparing voice", "Creating avatar"]
+TRAINING_STAGES = [s for s in TRAINING_STAGES_WITH_VOICE if s != "Preparing voice"]  # voice cloning is off for now
 MAX_REFERENCE_SIDE = 1280
 MOTION_CLIP_SECONDS = 5.0
 
@@ -41,6 +42,10 @@ GPU_LOCK = threading.Lock()
 
 
 class AvatarNotFound(KeyError):
+    pass
+
+
+class _SkipVoice(Exception):
     pass
 
 
@@ -145,7 +150,7 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
         "avatar_id": avatar_id,
         "status": "training",
         "stage": 0,
-        "stages": TRAINING_STAGES,
+        "stages": TRAINING_STAGES_WITH_VOICE if settings.clone_voice else TRAINING_STAGES,
         "created_at": _now(),
         "source": {"file": video_file.name},
         "provider": "local",
@@ -208,16 +213,21 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
             )
         media.write_json(d / "sadtalker" / "prep.json", prep)
 
-        # 4. Preparing voice
-        stage(3, "Preparing voice")
+        # 4. Preparing voice (off for now — videos fall back to a stock voice at render time)
+        if settings.clone_voice:
+            stage(3, "Preparing voice")
         # never block the avatar on the voice: if cloning isn't possible, continue with a stock voice
         voice_len = media.probe(d / "voice_clean.wav")["duration"]
         try:
+            if not settings.clone_voice:
+                raise _SkipVoice
             if voice_len < settings.min_voice_seconds:
                 raise ValueError(f"only {voice_len:.1f}s of speech found (needs {settings.min_voice_seconds:.0f}s)")
             with GPU_LOCK:
                 run_worker(settings.xtts_python, "xtts_worker.py", {"op": "clone", "speaker_wav": d / "voice_clean.wav", "out": d / "voice.pt"}, env=_xtts_env())
             manifest["voice"] = {"type": "cloned"}
+        except _SkipVoice:
+            manifest["voice"] = {"type": "none"}
         except Exception as e:
             from .photo_twin import use_stock_voice
 
@@ -225,7 +235,7 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
             manifest["warnings"].append(f"Couldn't clone your voice ({e}); the stock voice “{manifest['voice']['speaker']}” is used instead.")
 
         # 5. Creating avatar
-        stage(4, "Creating avatar")
+        stage(len(manifest["stages"]) - 1, "Creating avatar")
         shutil.rmtree(d / "work", ignore_errors=True)
         manifest.update(status="ready", ready_at=_now(), message="Ready")
         media.write_json(mpath, manifest)

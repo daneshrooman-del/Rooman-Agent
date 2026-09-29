@@ -22,7 +22,8 @@ from .config import settings
 from .twin import GPU_LOCK, _xtts_env, new_avatar_id
 from .workers.runner import run_worker
 
-PHOTO_STAGES = ["Checking photos", "Extracting identity", "Learning facial structure", "Preparing voice", "Creating avatar"]
+PHOTO_STAGES = ["Checking photos", "Extracting identity", "Learning facial structure", "Creating avatar"]
+PHOTO_STAGES_WITH_VOICE = ["Checking photos", "Extracting identity", "Learning facial structure", "Preparing voice", "Creating avatar"]
 PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 DEFAULT_STOCK_VOICE = "Claribel Dervla"
 MAX_SIDE = 1280
@@ -73,7 +74,7 @@ def build_from_photos(
     d.mkdir(parents=True, exist_ok=True)
     manifest: dict = {
         "avatar_id": avatar_id, "provider": "local", "source_type": "photos", "name": name,
-        "status": "training", "stage": 0, "stages": PHOTO_STAGES,
+        "status": "training", "stage": 0, "stages": PHOTO_STAGES_WITH_VOICE if (settings.clone_voice and voice_sample) else PHOTO_STAGES,
         "created_at": datetime.now(timezone.utc).isoformat(), "source": {"photos": [p.name for p in photos]}, "warnings": [],
         "models": {"animation": "SadTalker v0.0.2 (Apache-2.0)", "voice": "Coqui XTTS-v2 (CPML, non-commercial)", "identity": "OpenCV SFace (Apache-2.0)"},
     }
@@ -129,30 +130,32 @@ def build_from_photos(
             )
         media.write_json(d / "sadtalker" / "prep.json", prep)
 
-        # 4. voice: clone from a clip if given, else a stock XTTS voice
-        stage(3, "Preparing voice")
-        cloned = False
-        if voice_sample:
-            try:
-                clean = media.extract_clean_audio(Path(voice_sample), d / "voice_clean.wav")
-                if media.probe(clean)["duration"] < settings.min_voice_seconds:
-                    raise PhotoError(f"the clip has under {settings.min_voice_seconds:.0f} s of speech")
-                with GPU_LOCK:
-                    run_worker(settings.xtts_python, "xtts_worker.py", {"op": "clone", "speaker_wav": clean, "out": d / "voice.pt"}, env=_xtts_env())
-                manifest["voice"] = {"type": "cloned"}
-                cloned = True
-            except Exception as e:  # never block the avatar on the voice — fall back to a stock voice
-                manifest["warnings"].append(f"Couldn't clone the voice clip ({e}); a stock voice is used instead.")
-        if not cloned:
-            manifest["voice"] = use_stock_voice(d / "voice.pt", stock_voice)
-            if not voice_sample:
-                manifest["warnings"].append(f"No voice clip was given, so the stock voice “{manifest['voice']['speaker']}” is used. Add a 10–30 s recording of yourself to use your own voice.")
+        # 4. voice (optional, off for now — videos fall back to a stock voice at render time)
+        if settings.clone_voice and voice_sample:
+            stage(3, "Preparing voice")
+            cloned = False
+            if voice_sample:
+                try:
+                    clean = media.extract_clean_audio(Path(voice_sample), d / "voice_clean.wav")
+                    if media.probe(clean)["duration"] < settings.min_voice_seconds:
+                        raise PhotoError(f"the clip has under {settings.min_voice_seconds:.0f} s of speech")
+                    with GPU_LOCK:
+                        run_worker(settings.xtts_python, "xtts_worker.py", {"op": "clone", "speaker_wav": clean, "out": d / "voice.pt"}, env=_xtts_env())
+                    manifest["voice"] = {"type": "cloned"}
+                    cloned = True
+                except Exception as e:  # never block the avatar on the voice — fall back to a stock voice
+                    manifest["warnings"].append(f"Couldn't clone the voice clip ({e}); a stock voice is used instead.")
+            if not cloned:
+                manifest["voice"] = use_stock_voice(d / "voice.pt", stock_voice)
+                if not voice_sample:
+                    manifest["warnings"].append(f"No voice clip was given, so the stock voice “{manifest['voice']['speaker']}” is used. Add a 10–30 s recording of yourself to use your own voice.")
 
-        stage(4, "Creating avatar")
+
+        stage(len(manifest["stages"]) - 1, "Creating avatar")
         manifest.update(status="ready", ready_at=datetime.now(timezone.utc).isoformat(), message="Ready")
         media.write_json(mpath, manifest)
         if on_progress:
-            on_progress(len(PHOTO_STAGES), "Ready")
+            on_progress(len(manifest["stages"]), "Ready")
         return avatar_id
     except Exception as e:
         manifest.update(status="failed", error=str(e))

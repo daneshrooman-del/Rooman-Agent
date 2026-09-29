@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { WifiOff } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { useOnline } from '@/hooks/useOnline'
+import { useEngineTrainingSync } from '@/hooks/useEngineTrainingSync'
 import { useWorkspace } from '@/state/workspace'
 import { ErrorState, PageLoader } from '@/components/ui/States'
 import { Sidebar } from './Sidebar'
@@ -21,6 +22,7 @@ export function AppShell() {
   const { pathname } = useLocation()
   const online = useOnline()
   const { status, error, reload } = useWorkspace()
+  useEngineTrainingSync()
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(COLLAPSE_KEY) === '1'
