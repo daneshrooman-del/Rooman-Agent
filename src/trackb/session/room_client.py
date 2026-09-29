@@ -35,7 +35,7 @@ on the `RoomClient` Protocol below.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any, Protocol, runtime_checkable
 
 import structlog
@@ -48,6 +48,9 @@ DEFAULT_SAMPLE_RATE = 16_000
 DEFAULT_NUM_CHANNELS = 1
 _PUBLISHED_TRACK_NAME = "trackb-agent-voice"
 _BYTES_PER_SAMPLE = 2  # PCM16
+TEXT_CHAT_TOPIC = "lk-chat-topic"
+"""Matches the frontend's `room.localParticipant.sendText(text, {topic: 'lk-chat-topic'})` --
+the well-known LiveKit chat topic, not something either side invented."""
 
 TRANSCRIPTION_PUBLISH_TIMEOUT_SECONDS = 5.0
 _TRANSCRIPTION_RETRY = retry(
@@ -108,6 +111,13 @@ class RoomClient(Protocol):
         final: bool,
     ) -> None:
         """Publish one transcription segment for `participant_identity`'s `track_sid`."""
+        ...
+
+    def on_text_message(self, handler: Callable[[str], Awaitable[None]]) -> None:
+        """Register `handler` to be awaited with the full text whenever a participant sends a
+        typed message over the room's text-chat channel (the frontend's `sendText(text,
+        {topic: 'lk-chat-topic'})`) -- the typed-input counterpart to `audio_frames()`, so a
+        user who types instead of speaks still drives the same conversation."""
         ...
 
 
@@ -311,3 +321,29 @@ class LiveKitRoomClient:
             ],
         )
         await self._publish_transcription_with_retry(transcription)
+
+    def on_text_message(self, handler: Callable[[str], Awaitable[None]]) -> None:
+        def _on_stream_opened(reader: rtc.TextStreamReader, participant_identity: str) -> None:
+            asyncio.create_task(self._consume_text_stream(reader, participant_identity, handler))
+
+        self._room.register_text_stream_handler(TEXT_CHAT_TOPIC, _on_stream_opened)
+
+    async def _consume_text_stream(
+        self,
+        reader: rtc.TextStreamReader,
+        participant_identity: str,
+        handler: Callable[[str], Awaitable[None]],
+    ) -> None:
+        try:
+            text = await reader.read_all()
+        except Exception as exc:
+            logger.error(
+                "text_stream_read_failed", participant=participant_identity, error=str(exc)
+            )
+            return
+        if not text.strip():
+            return
+        logger.info(
+            "text_message_received", participant=participant_identity, characters=len(text)
+        )
+        await handler(text)

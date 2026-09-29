@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 import pytest
 
@@ -31,6 +31,7 @@ class _FakeRoomClient:
         self.remote_track_sid = remote_track_sid
         self._fail_publish_transcription = fail_publish_transcription
         self.published_transcriptions: list[dict[str, object]] = []
+        self.text_handler: Callable[[str], Awaitable[None]] | None = None
 
     async def connect(self, *, url: str, token: str) -> None:
         self.connect_calls.append((url, token))
@@ -68,6 +69,9 @@ class _FakeRoomClient:
                 "final": final,
             }
         )
+
+    def on_text_message(self, handler: Callable[[str], Awaitable[None]]) -> None:
+        self.text_handler = handler
 
 
 class _FakeSTT:
@@ -361,3 +365,47 @@ async def test_leave_is_idempotent() -> None:
 
     assert room.disconnected is True
     assert stt.closed is True
+
+
+@pytest.mark.asyncio
+async def test_typed_text_reaches_the_same_utterance_handler_as_speech() -> None:
+    """A user who types instead of speaks must drive the conversation identically -- no
+    changes needed in IntakeSessionDriver/ConversationSessionDriver, which only ever react to
+    TranscribedUtterance regardless of where it came from."""
+    room = _FakeRoomClient(frames=[])
+    worker = SessionWorker(session_id="sess-10", room_client=room, stt=_FakeSTT())
+    received: list[TranscribedUtterance] = []
+
+    async def handler(utterance: TranscribedUtterance) -> None:
+        received.append(utterance)
+
+    worker.on_utterance(handler)
+    await worker.join(url="ws://livekit.local", token="tok")
+
+    assert room.text_handler is not None
+    await room.text_handler("I need an agent for HR calls")
+
+    assert len(received) == 1
+    assert received[0] == TranscribedUtterance(
+        session_id="sess-10", text="I need an agent for HR calls", is_final=True
+    )
+
+    await worker.leave()
+
+
+@pytest.mark.asyncio
+async def test_typed_text_is_not_echoed_back_as_a_transcription() -> None:
+    """The frontend already appends the user's own typed message to its transcript
+    optimistically before this even reaches the backend -- publishing a transcription for it
+    too would duplicate the line."""
+    room = _FakeRoomClient(frames=[])
+    worker = SessionWorker(session_id="sess-11", room_client=room, stt=_FakeSTT())
+    worker.on_utterance(lambda _utterance: asyncio.sleep(0))
+
+    await worker.join(url="ws://livekit.local", token="tok")
+    assert room.text_handler is not None
+    await room.text_handler("hello")
+
+    assert room.published_transcriptions == []
+
+    await worker.leave()

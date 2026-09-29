@@ -114,6 +114,26 @@ class SessionWorker:
         self._audio_pump_task.add_done_callback(self._on_pump_task_done)
         self._transcript_pump_task.add_done_callback(self._on_pump_task_done)
 
+        register_text_handler = getattr(self._room_client, "on_text_message", None)
+        if register_text_handler is not None:
+            register_text_handler(self._handle_typed_text)
+
+    async def _handle_typed_text(self, text: str) -> None:
+        """Feed a typed message (from the frontend's text composer, over the room's text-chat
+        channel) into the same conversation pipeline as a spoken, transcribed utterance --
+        `IntakeSessionDriver`/`ConversationSessionDriver` need no changes, they already just
+        react to `TranscribedUtterance`s regardless of where one came from.
+
+        Not echoed back as a transcription: the frontend already appends the user's own typed
+        text to its transcript optimistically, before this even reaches the backend -- doing
+        it here too would duplicate the line."""
+        utterance = TranscribedUtterance(
+            session_id=self._session_id, text=text, is_final=True
+        )
+        handler = self._on_utterance
+        if handler is not None:
+            await handler(utterance)
+
     def _on_pump_task_done(self, task: asyncio.Task[None]) -> None:
         """A pump task normally only ends via `leave()` cancelling it. If one instead ends on
         its own with a real exception (e.g. `audio_frames()` timing out waiting for a
