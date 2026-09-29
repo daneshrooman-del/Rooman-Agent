@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MessagesSquare, MicOff, VolumeX } from 'lucide-react'
 import type { Agent } from '@/types'
+import { api } from '@/lib/api'
 import { useWorkspace } from '@/state/workspace'
 import { useOnline } from '@/hooks/useOnline'
 import { Dialog, StatusIndicator } from '@/components/ui'
@@ -78,6 +79,10 @@ export function LiveExperience({ initialAvatarId, agent }: { initialAvatarId: st
       ? `Hi, I’m ${avatar.name}, here as your ${agent.name}. How can I help today?`
       : `Hi, I’m ${avatar.name}. It’s great to meet you. Ask me anything — about our company, our products, or what an AI agent could do for your team.`,
     voicePrompts: LIVE_VOICE_PROMPTS,
+    // A specific deployed agent → talk to it directly. No agent → this is the
+    // live intake conversation for building a new one (its transcript is what
+    // "Turn this conversation into an agent" hands to the Agent Builder).
+    startSession: () => (agent ? api.startAgentConversation(agent.id) : api.startIntakeSession(data?.user.email ?? data?.user.id ?? 'unknown')),
   })
 
   const running = conv.status !== 'idle' && conv.status !== 'ended'

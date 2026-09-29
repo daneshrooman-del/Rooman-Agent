@@ -1,25 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ConnectionState, createAudioAnalyser, Room, RoomEvent, Track, type LocalAudioTrack } from 'livekit-client'
 import { useOnline } from '@/hooks/useOnline'
-import type { ConnectionStatus, LiveEvent, Responder, ResponderMeta, TranscriptItem, TurnPhase } from './types'
+import { isDemoMode, type LiveSessionHandle } from '@/lib/api'
+import type { ConnectionStatus, LiveEvent, Responder, ResponderMeta, Speaker, TranscriptItem, TurnPhase } from './types'
 
 /* ------------------------------------------------------------------
-   useLiveConversation — SIMULATED live conversation engine.
+   useLiveConversation — live conversation engine.
 
-   Everything here is scripted: "connecting", the user's "voice", the
-   mic level, and the avatar's replies (produced by the `responder`
-   you pass in). It exists so the Live AI and Agent Live Test screens
-   behave realistically in demo mode.
+   In demo mode (no VITE_API_URL) everything is scripted: "connecting",
+   the user's "voice", the mic level, and the avatar's replies (produced
+   by the `responder` you pass in). That path is untouched below.
 
-   Realtime integration point: to go live, replace the internals of
-   `connect` / `send` / `speak` / `end` with a WebRTC (media + data
-   channel) or WebSocket session to the avatar backend, and feed its
-   messages into the same state:
-     • connection events  → setStatus('connecting' | 'online' | …)
-     • VAD / mic RMS       → setMicLevel(0..1), setPhase('listening')
-     • ASR final text      → pushMessage('user', text)
-     • agent step events   → pushEvent({ kind, detail })
-     • TTS text deltas     → append to the streaming avatar message
-   The returned API and the TranscriptItem shape stay the same, so the
+   When a real backend is configured, `connect()` calls the `startSession`
+   option to get LiveKit room credentials, joins the room with
+   livekit-client, publishes the microphone, plays the remote (agent)
+   audio track, and turns `RoomEvent.TranscriptionReceived` segments into
+   the same TranscriptItem messages the simulated path produces — so the
    UI components (LiveStage, Transcript, ControlBar) need no changes.
    ------------------------------------------------------------------ */
 
@@ -28,17 +24,24 @@ const prefersReducedMotion = () =>
 
 interface Options {
   responder: Responder
-  /** what the avatar says as soon as the session is online */
+  /** what the avatar says as soon as the session is online (demo mode only — a real agent greets on its own) */
   greeting?: string
-  /** utterances used when the user presses "speak" without a prompt */
+  /** utterances used when the user presses "speak" without a prompt (demo mode only) */
   voicePrompts?: string[]
   /** connect immediately on mount (Agent Live Test); the Live page waits for "Start" */
   autoConnect?: boolean
-  /** milliseconds between streamed words */
+  /** milliseconds between streamed words (demo mode only) */
   wordMs?: number
+  /**
+   * Starts a real backend session and returns LiveKit room credentials.
+   * Required to go live when a real API is configured (`!isDemoMode`); the
+   * caller picks the right backend endpoint (a new intake session vs. a
+   * conversation with an already-deployed agent). Ignored in demo mode.
+   */
+  startSession?: () => Promise<LiveSessionHandle>
 }
 
-export function useLiveConversation({ responder, greeting, voicePrompts = [], autoConnect = false, wordMs = 55 }: Options) {
+export function useLiveConversation({ responder, greeting, voicePrompts = [], autoConnect = false, wordMs = 55, startSession }: Options) {
   const online = useOnline()
   const [rawStatus, setStatus] = useState<ConnectionStatus>('idle')
   const [phase, setPhase] = useState<TurnPhase>('idle')
@@ -52,11 +55,20 @@ export function useLiveConversation({ responder, greeting, voicePrompts = [], au
   const turn = useRef(0)
   const responderRef = useRef(responder)
   const greetingRef = useRef(greeting)
+  const startSessionRef = useRef(startSession)
   const streamingId = useRef<string | null>(null)
   const streamingFull = useRef('')
+
+  // Real (LiveKit) session plumbing.
+  const roomRef = useRef<Room | null>(null)
+  const audioElsRef = useRef<Map<string, HTMLMediaElement>>(new Map())
+  const micMeterCleanupRef = useRef<(() => void) | null>(null)
+  const segmentItemIds = useRef(new Map<string, string>())
+
   useEffect(() => {
     responderRef.current = responder
     greetingRef.current = greeting
+    startSessionRef.current = startSession
   })
 
   const later = useCallback((fn: () => void, ms: number) => {
@@ -81,7 +93,33 @@ export function useLiveConversation({ responder, greeting, voicePrompts = [], au
     })
     timers.current.clear()
   }, [])
-  useEffect(() => clearAll, [clearAll])
+
+  /** Tear down the real LiveKit room and everything attached to it. */
+  const teardownRoom = useCallback(() => {
+    micMeterCleanupRef.current?.()
+    micMeterCleanupRef.current = null
+    segmentItemIds.current.clear()
+    audioElsRef.current.forEach((el) => {
+      el.pause()
+      el.srcObject = null
+      el.remove()
+    })
+    audioElsRef.current.clear()
+    const room = roomRef.current
+    roomRef.current = null
+    if (room) {
+      room.removeAllListeners()
+      room.disconnect().catch(() => {})
+    }
+  }, [])
+
+  useEffect(
+    () => () => {
+      clearAll()
+      teardownRoom()
+    },
+    [clearAll, teardownRoom],
+  )
 
   const nextId = () => `li_${++seq.current}`
 
@@ -102,7 +140,25 @@ export function useLiveConversation({ responder, greeting, voicePrompts = [], au
     setItems((l) => [...l, { id: nextId(), type: 'event', at: Date.now(), ...e }])
   }, [])
 
-  /** Stream an avatar message word-by-word. */
+  /** Real mode: create/update the TranscriptItem for a (possibly still-interim) transcription segment. */
+  const upsertSegment = useCallback((speaker: Speaker, seg: { id: string; text: string; final: boolean }) => {
+    const existing = segmentItemIds.current.get(seg.id)
+    if (existing) {
+      setItems((l) => l.map((it) => (it.id === existing && it.type === 'message' ? { ...it, text: seg.text, streaming: !seg.final } : it)))
+    } else {
+      const id = nextId()
+      segmentItemIds.current.set(seg.id, id)
+      setItems((l) => [...l, { id, type: 'message', speaker, text: seg.text, streaming: !seg.final, at: Date.now() }])
+    }
+    if (seg.final) {
+      segmentItemIds.current.delete(seg.id)
+      setPhase(speaker === 'user' ? 'thinking' : 'idle')
+    } else {
+      setPhase(speaker === 'user' ? 'listening' : 'speaking')
+    }
+  }, [])
+
+  /** Stream an avatar message word-by-word (demo mode). */
   const streamReply = useCallback(
     (text: string) => {
       const id = nextId()
@@ -135,7 +191,7 @@ export function useLiveConversation({ responder, greeting, voicePrompts = [], au
     [every, later, wordMs],
   )
 
-  /** Run the responder: think, emit step events one by one, then speak. */
+  /** Run the responder: think, emit step events one by one, then speak (demo mode). */
   const respond = useCallback(
     (input: string, meta: Omit<ResponderMeta, 'turn'>) => {
       turn.current += 1
@@ -171,19 +227,105 @@ export function useLiveConversation({ responder, greeting, voicePrompts = [], au
     wasOnline.current = online
   }, [online, rawStatus, later, clearAll, finalizeStreaming])
 
+  /** Join the real LiveKit room returned by `startSession` and wire it into this hook's state. */
+  const connectReal = useCallback(() => {
+    setStatus('connecting')
+    ;(async () => {
+      try {
+        const start = startSessionRef.current
+        if (!start) throw new Error('No live session starter was provided.')
+        const session = await start()
+        const room = new Room()
+        roomRef.current = room
+
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          // The browser's own local participant is the human caller; anything
+          // else (the backend agent's participant) is the avatar speaking.
+          const speaker: Speaker = participant?.isLocal ? 'user' : 'avatar'
+          segments.forEach((seg) => upsertSegment(speaker, seg))
+        })
+
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Audio) {
+            const el = track.attach()
+            el.autoplay = true
+            el.style.display = 'none'
+            document.body.appendChild(el)
+            if (track.sid) audioElsRef.current.set(track.sid, el)
+          }
+        })
+        room.on(RoomEvent.TrackUnsubscribed, (track) => {
+          track.detach().forEach((el) => el.remove())
+          if (track.sid) audioElsRef.current.delete(track.sid)
+        })
+
+        room.on(RoomEvent.Disconnected, () => {
+          clearAll()
+          finalizeStreaming()
+          setPhase('idle')
+          setMicLevel(0)
+          setStatus((s) => (s === 'ended' ? s : 'ended'))
+          setEndedAt((e) => e ?? Date.now())
+          teardownRoom()
+        })
+        room.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
+          if (state === ConnectionState.Reconnecting || state === ConnectionState.SignalReconnecting) {
+            setStatus((s) => (s === 'ended' ? s : 'reconnecting'))
+          } else if (state === ConnectionState.Connected) {
+            setStatus((s) => (s === 'ended' ? s : 'online'))
+          }
+        })
+
+        await room.connect(session.livekit_url, session.token)
+        await room.localParticipant.setMicrophoneEnabled(true)
+
+        // Best-effort mic level meter for the LiveStage visualizer; safe to skip.
+        try {
+          const pub = room.localParticipant.getTrackPublication(Track.Source.Microphone)
+          const micTrack = pub?.track as LocalAudioTrack | undefined
+          if (micTrack) {
+            const { calculateVolume, cleanup } = createAudioAnalyser(micTrack)
+            micMeterCleanupRef.current = () => {
+              cleanup().catch(() => {})
+            }
+            every(() => setMicLevel(Math.min(1, calculateVolume() * 3)), 120)
+          }
+        } catch {
+          /* mic level meter is a nice-to-have */
+        }
+
+        setStatus((s) => (s === 'ended' ? s : 'online'))
+        setStartedAt(Date.now())
+      } catch (err) {
+        console.error('Failed to start the live session', err)
+        pushEvent({ kind: 'guardrail', label: 'Connection failed', detail: err instanceof Error ? err.message : 'Could not reach the live session backend.' })
+        teardownRoom()
+        setStatus('ended')
+        setEndedAt(Date.now())
+      }
+    })()
+  }, [clearAll, every, finalizeStreaming, pushEvent, teardownRoom, upsertSegment])
+
   const connect = useCallback(() => {
     clearAll()
+    teardownRoom()
     setItems([])
     turn.current = 0
     setPhase('idle')
     setEndedAt(null)
+
+    if (!isDemoMode && startSessionRef.current) {
+      connectReal()
+      return
+    }
+
     setStatus('connecting')
     later(() => {
       setStatus('online')
       setStartedAt(Date.now())
       if (greetingRef.current) later(() => streamReply(greetingRef.current!), 350)
     }, 1100)
-  }, [clearAll, later, streamReply])
+  }, [clearAll, connectReal, later, streamReply, teardownRoom])
 
   const canTalk = status === 'online'
 
@@ -195,16 +337,31 @@ export function useLiveConversation({ responder, greeting, voicePrompts = [], au
       finalizeStreaming()
       setMicLevel(0)
       pushMessage('user', t)
+      const room = roomRef.current
+      if (room) {
+        // Real mode: the mic carries voice; typed text goes over LiveKit's text
+        // data-stream channel so the backend agent can react to it too.
+        room.localParticipant.sendText(t, { topic: 'lk-chat-topic' }).catch((err) => console.error('Failed to send message', err))
+        return true
+      }
       respond(t, { ...meta, spoken: false })
       return true
     },
     [canTalk, clearAll, finalizeStreaming, pushMessage, respond],
   )
 
-  /** Simulate the user speaking: listening + mic level, then a transcribed utterance. */
+  /** Simulate the user speaking: listening + mic level, then a transcribed utterance (demo mode). */
   const speak = useCallback(
     (prompt?: string, meta: { scenario?: string } = {}) => {
       if (!canTalk) return false
+      if (roomRef.current) {
+        // Real mode: the mic is already live and continuously published. A
+        // scripted prompt (e.g. a quick-test chip) has no audio to play, so
+        // send it as text instead; a plain "press to talk" is a no-op — real
+        // transcription events drive phase/state from here.
+        if (prompt) return send(prompt, meta)
+        return true
+      }
       const text = prompt ?? voicePrompts[turn.current % Math.max(1, voicePrompts.length)] ?? 'Hello, can you hear me?'
       clearAll()
       finalizeStreaming()
@@ -220,7 +377,7 @@ export function useLiveConversation({ responder, greeting, voicePrompts = [], au
       }, 1900)
       return true
     },
-    [canTalk, clearAll, every, finalizeStreaming, later, pushMessage, respond, voicePrompts],
+    [canTalk, clearAll, every, finalizeStreaming, later, pushMessage, respond, send, voicePrompts],
   )
 
   const end = useCallback(() => {
@@ -228,12 +385,17 @@ export function useLiveConversation({ responder, greeting, voicePrompts = [], au
     finalizeStreaming()
     setPhase('idle')
     setMicLevel(0)
+    if (roomRef.current) {
+      roomRef.current.localParticipant.setMicrophoneEnabled(false).catch(() => {})
+      teardownRoom()
+    }
     setStatus('ended')
     setEndedAt(Date.now())
-  }, [clearAll, finalizeStreaming])
+  }, [clearAll, finalizeStreaming, teardownRoom])
 
   const reset = useCallback(() => {
     clearAll()
+    teardownRoom()
     streamingId.current = null
     setItems([])
     setPhase('idle')
@@ -242,7 +404,7 @@ export function useLiveConversation({ responder, greeting, voicePrompts = [], au
     setStartedAt(null)
     setEndedAt(null)
     turn.current = 0
-  }, [clearAll])
+  }, [clearAll, teardownRoom])
 
   useEffect(() => {
     if (autoConnect) connect()

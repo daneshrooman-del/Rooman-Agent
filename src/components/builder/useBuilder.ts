@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { api, isDemoMode } from '@/lib/api'
 import { buildConfig, refineConfig, templateCopy, transcriptText, type BuilderConfig, type FromLive, type SectionKey } from './templates'
 
 export const STAGES = ['Understand', 'Plan', 'Knowledge', 'Avatar', 'Tools', 'Deploy'] as const
@@ -36,11 +37,14 @@ export function useBuilder({
   names,
   fromLive,
   initialPrompt,
+  owner,
 }: {
   avatar: { id: string; voiceId: string }
   names: (cfg: BuilderConfig) => { avatar: string; voice: string }
   fromLive?: FromLive & { avatarName?: string }
   initialPrompt?: string
+  /** identifies who is building this agent — used to open a backend intake session */
+  owner?: string
 }) {
   const makeConfig = (text: string) => {
     const source = fromLive ? `${text} ${transcriptText(fromLive.transcript)} ${(fromLive.goals ?? []).join(' ')}` : text
@@ -78,8 +82,30 @@ export function useBuilder({
   const [revealed, setRevealed] = useState<Set<SectionKey>>(() => new Set())
   const [typing, setTyping] = useState(!!initialPrompt)
   const [flash, setFlash] = useState<{ keys: SectionKey[]; n: number }>({ keys: [], n: 0 })
+  /** The backend intake session for this build, once a real API is configured. Not consumed
+   *  anywhere yet (the builder's chat stays fully local/scripted) but ready for the future —
+   *  e.g. attaching reference documents via `api.uploadReferenceDocument(sessionId, file)`. */
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const timers = useRef<number[]>([])
   const namesRef = useRef(names)
+  const ownerRef = useRef(owner)
+  useEffect(() => {
+    ownerRef.current = owner
+  })
+
+  const startIntake = useCallback(() => {
+    if (isDemoMode) return
+    api
+      .startIntakeSession(ownerRef.current ?? 'unknown')
+      .then((s) => setSessionId(s.session_id))
+      .catch((err) => console.error('Failed to start the intake session', err))
+  }, [])
+
+  useEffect(() => {
+    if (initialPrompt) startIntake()
+    // fire once on mount only, matching the initial `job` seeded below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   useEffect(() => {
     namesRef.current = names
   })
@@ -126,9 +152,10 @@ export function useBuilder({
       setStage(0)
       setTyping(true)
       setJob({ cfg: makeConfig(text), startedAt: Date.now() })
+      startIntake()
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [avatar.id, avatar.voiceId, fromLive],
+    [avatar.id, avatar.voiceId, fromLive, startIntake],
   )
 
   const refine = useCallback(
@@ -164,5 +191,5 @@ export function useBuilder({
     setFlash((f) => ({ keys, n: f.n + 1 }))
   }, [])
 
-  return { messages, config, state, stage, revealed, typing, flash, send, build, update, markStreamed }
+  return { messages, config, state, stage, revealed, typing, flash, sessionId, send, build, update, markStreamed }
 }
