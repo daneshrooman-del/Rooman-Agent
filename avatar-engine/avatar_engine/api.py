@@ -15,11 +15,13 @@ from .actions import ActionNotSupported, ActionType
 from .consistency import ConsistencyReport
 from .generate import AvatarNotReady, ConsistencyError, render
 from .ingest import IngestError
+from .photo_twin import DEFAULT_STOCK_VOICE, PhotoError, build_from_photos
 from .twin import AvatarNotFound, build_twin, load_manifest
 from .workers.runner import WorkerError
 
 __all__ = [
     "create_avatar",
+    "create_avatar_from_photos",
     "generate",
     "get_avatar",
     "ActionType",
@@ -29,6 +31,7 @@ __all__ = [
     "ConsistencyError",
     "ConsistencyReport",
     "IngestError",
+    "PhotoError",
     "WorkerError",
 ]
 
@@ -46,6 +49,24 @@ def create_avatar(video_file: str | Path, *, name: str | None = None, on_progres
     Raises IngestError (unusable footage — message is user-facing), WorkerError (model failure).
     """
     return build_twin(Path(video_file), on_progress=on_progress, name=name)
+
+
+def create_avatar_from_photos(
+    photos: list[str | Path],
+    *,
+    voice_sample: str | Path | None = None,
+    stock_voice: str = DEFAULT_STOCK_VOICE,
+    name: str | None = None,
+    on_progress: ProgressFn | None = None,
+) -> str:
+    """Twin from 1–5 photos of one person (3 recommended: front, slight left, slight right).
+
+    All photos must show the same person; they are combined into the identity anchor used by the
+    consistency check. voice_sample (audio or video, ≥6 s) clones the voice; otherwise an XTTS-v2
+    stock voice is used. Always runs locally (free). Raises PhotoError with a user-facing message.
+    """
+    return build_from_photos([Path(p) for p in photos], voice_sample=Path(voice_sample) if voice_sample else None,
+                             stock_voice=stock_voice, name=name, on_progress=on_progress)
 
 
 def generate(

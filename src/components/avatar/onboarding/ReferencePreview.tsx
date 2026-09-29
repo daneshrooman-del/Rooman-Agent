@@ -7,7 +7,7 @@ import { Button, buttonStyles } from '@/components/ui/Button'
 import { AvatarPreview } from '@/components/avatar/AvatarPreview'
 import { useObjectUrl } from './useObjectUrl'
 
-export type ReferenceSource = { kind: 'file'; file: File } | { kind: 'sample' }
+export type ReferenceSource = { kind: 'file'; file: File } | { kind: 'sample' } | { kind: 'photos'; photos: File[]; voice: File | null }
 
 export const SAMPLE_DURATION_SEC = 192
 

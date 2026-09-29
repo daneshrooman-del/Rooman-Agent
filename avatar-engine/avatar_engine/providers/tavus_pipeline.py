@@ -36,7 +36,10 @@ def _now() -> str:
 
 
 def _prepare_training_video(src: Path, out: Path) -> tuple[Path, list[str]]:
-    info = media.probe(src)
+    # upright first (phone rotation metadata), so resolution checks see the real orientation
+    upright = media.normalize_video(src, out.with_name("upright.mp4"), max_side=3840)
+    info = media.probe(upright)
+    src = upright
     warnings: list[str] = []
     if not info["has_video"]:
         raise ValueError("The file has no video stream.")

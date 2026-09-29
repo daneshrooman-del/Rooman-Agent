@@ -20,6 +20,10 @@ class TavusError(RuntimeError):
     pass
 
 
+class TavusPlanError(TavusError):
+    """402 — the Tavus plan doesn't include this (e.g. custom face training on the free plan)."""
+
+
 def _client() -> httpx.Client:
     if not settings.tavus_api_key:
         raise TavusError("TAVUS_API_KEY is not set (put it in avatar-engine/.env).")
@@ -33,7 +37,8 @@ def _check(r: httpx.Response) -> dict:
             msg = body.get("message") or body.get("error") or r.text
         except Exception:
             msg = r.text
-        raise TavusError(f"Tavus {r.request.method} {r.request.url.path} failed ({r.status_code}): {msg}")
+        cls = TavusPlanError if r.status_code == 402 else TavusError
+        raise cls(f"Tavus {r.request.method} {r.request.url.path} failed ({r.status_code}): {msg}")
     return r.json() if r.content else {}
 
 

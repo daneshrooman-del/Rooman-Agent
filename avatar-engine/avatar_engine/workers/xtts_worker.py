@@ -32,6 +32,20 @@ def clone(req):
     return {"voice": req["out"], "device": device}
 
 
+def stock(req):
+    """Use one of XTTS-v2's built-in studio speakers when no voice sample exists (photo avatars)."""
+    import torch
+
+    model, device = _model()
+    speakers = model.speaker_manager.speakers
+    name = req.get("speaker") or ""
+    if name not in speakers:
+        return {"error": f"Unknown stock voice '{name}'.", "speakers": sorted(speakers)}
+    s = speakers[name]
+    torch.save({"gpt_cond_latent": s["gpt_cond_latent"].cpu(), "speaker_embedding": s["speaker_embedding"].cpu()}, req["out"])
+    return {"voice": req["out"], "speaker": name, "speakers": sorted(speakers)}
+
+
 def _sentences(text, limit=220):
     """XTTS degrades past ~250 chars per call — split on sentence ends, then commas."""
     parts = [p.strip() for p in re.split(r"(?<=[.!?।])\s+", text.strip()) if p.strip()]
@@ -71,7 +85,7 @@ def speak(req):
 def main():
     req = json.loads(sys.stdin.read())
     try:
-        out = {"clone": clone, "speak": speak}[req["op"]](req)
+        out = {"clone": clone, "speak": speak, "stock": stock}[req["op"]](req)
     except Exception as e:
         traceback.print_exc()
         out = {"error": f"{type(e).__name__}: {e}"}

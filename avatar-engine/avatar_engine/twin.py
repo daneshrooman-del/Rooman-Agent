@@ -119,10 +119,18 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
         raise ValueError(f"Unsupported video type '{video_file.suffix}'. Use one of: {', '.join(sorted(media.VIDEO_EXTS))}")
 
     avatar_id = avatar_id or new_avatar_id()
+    fallback_note: str | None = None
     if settings.provider == "tavus":
         from .providers import tavus_pipeline
+        from .providers.tavus import TavusPlanError
 
-        return tavus_pipeline.build(video_file, avatar_id, name, on_progress)
+        try:
+            return tavus_pipeline.build(video_file, avatar_id, name, on_progress)
+        except TavusPlanError:
+            # e.g. the free Tavus plan has no custom face trainings — train the twin locally instead
+            fallback_note = "Your Tavus plan doesn't include custom face training, so this avatar was trained locally (free, slower)."
+            if not settings.sadtalker_python.exists():
+                raise
     d = settings.avatars_dir / avatar_id
     d.mkdir(parents=True, exist_ok=True)
     source = d / f"source{video_file.suffix.lower()}"
@@ -134,7 +142,8 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
         "stages": TRAINING_STAGES,
         "created_at": _now(),
         "source": {"file": video_file.name},
-        "warnings": [],
+        "provider": "local",
+        "warnings": [fallback_note] if fallback_note else [],
         "models": {"animation": "SadTalker v0.0.2 (Apache-2.0)", "voice": "Coqui XTTS-v2 (CPML, non-commercial)", "identity": "OpenCV SFace (Apache-2.0)"},
     }
     mpath = d / "manifest.json"
@@ -150,7 +159,9 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
     try:
         # 1. Analyzing video
         stage(0, "Analyzing video")
-        ing = ingest(source, d / "work")
+        # upright + constant fps (phone rotation, browser WebM) before any frame is read
+        clip = media.normalize_video(source, d / "normalized.mp4")
+        ing = ingest(clip, d / "work")
         shutil.move(str(ing.audio_wav), d / "voice_clean.wav")
         manifest["source"].update(duration=ing.duration, fps=ing.fps, width=ing.width, height=ing.height)
         manifest["warnings"] += ing.warnings
@@ -171,7 +182,7 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
             raise ValueError("The best frames don't all look like the same person. Use footage of one person only.")
         np.save(d / "identity.npy", anchor)
         best = max(ing.samples, key=lambda s: s.score)
-        reference = _grab_frame(source, best.t)
+        reference = _grab_frame(clip, best.t)
         cv2.imwrite(str(d / "reference.png"), reference)
         ref_faces = identity.detect(reference)
         if not ref_faces or identity.similarity(identity.embed(reference, ref_faces[0]), anchor) < settings.identity_threshold:
@@ -182,7 +193,7 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
         # 3. Learning facial motion — 3DMM fit + the person's own head motion
         stage(2, "Learning facial motion")
         t0 = _motion_window(ing)
-        media.cut(source, d / "ref_motion.mp4", t0, min(MOTION_CLIP_SECONDS, ing.duration - t0))
+        media.cut(clip, d / "ref_motion.mp4", t0, min(MOTION_CLIP_SECONDS, ing.duration - t0))
         with GPU_LOCK:
             prep = run_worker(
                 settings.sadtalker_python, "sadtalker_worker.py",

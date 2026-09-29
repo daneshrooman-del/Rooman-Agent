@@ -42,7 +42,26 @@ def probe(path: Path) -> dict:
     if m := re.search(r"(\d+(?:\.\d+)?) fps", out):
         info["fps"] = float(m.group(1))
     info["has_audio"] = bool(re.search(r"Stream #.*Audio:", out))
+    if not info["duration"] and (info["has_video"] or info["has_audio"]):
+        # Browser MediaRecorder WebM files carry no duration header — decode to measure it.
+        p = subprocess.run([FFMPEG, "-hide_banner", "-i", str(path), "-f", "null", "-"], capture_output=True, text=True)
+        times = re.findall(r"time=(\d+):(\d+):(\d+\.\d+)", p.stderr)
+        if times:
+            h, mi, s = times[-1]
+            info["duration"] = int(h) * 3600 + int(mi) * 60 + float(s)
     return info
+
+
+def normalize_video(src: Path, out: Path, max_side: int = 1920, fps: int = 30) -> Path:
+    """Upright, constant-frame-rate H.264/AAC MP4.
+
+    ffmpeg applies phone rotation metadata (OpenCV ignores it and would see the
+    face sideways) and gives browser WebM recordings a real duration + fps.
+    """
+    box = f"scale='if(gt(iw,ih),min({max_side},iw),-2)':'if(gt(iw,ih),-2,min({max_side},ih))'"
+    ffmpeg("-i", src, "-vf", f"{box},fps={fps},format=yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+           "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", out)
+    return out
 
 
 def extract_clean_audio(video: Path, out_wav: Path, sample_rate: int = 22050) -> Path:

@@ -44,10 +44,13 @@ export function ProcessingStep({
   const poll = useRef<number | undefined>(undefined)
   const { start, setProgress, setState } = job
   // A real upload + a configured engine trains an actual digital twin; otherwise the demo simulation runs.
-  const real = engineEnabled && source.kind === 'file'
+  const real = engineEnabled && (source.kind === 'file' || source.kind === 'photos')
 
-  const beginReal = useCallback(async (file: File) => {
-    const a = await engine.createAvatar(name.trim(), file)
+  const beginReal = useCallback(async (src: ReferenceSource) => {
+    const a =
+      src.kind === 'photos'
+        ? await engine.createAvatarFromPhotos(name.trim(), src.photos, src.voice)
+        : await engine.createAvatar(name.trim(), (src as { file: File }).file)
     setAvatar(a)
     addAvatar(a)
     setState('running')
@@ -79,8 +82,8 @@ export function ProcessingStep({
 
   const begin = useCallback(() => {
     setError(null)
-    if (real && source.kind === 'file') {
-      beginReal(source.file).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Upload failed'))
+    if (real) {
+      beginReal(source).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Upload failed'))
       return
     }
     api

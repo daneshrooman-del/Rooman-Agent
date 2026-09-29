@@ -74,6 +74,38 @@ def create(video: UploadFile = File(...), consent: bool = Form(False), name: str
     return {"avatar_id": avatar_id, "status": "training", "stages": TRAINING_STAGES}
 
 
+@app.post("/avatars/photos", status_code=202)
+def create_from_photos(
+    photos: list[UploadFile] = File(...),
+    voice: UploadFile | None = File(None),
+    consent: bool = Form(False),
+    name: str | None = Form(None),
+) -> dict:
+    """1–5 photos (+ optional voice clip) -> twin, trained locally."""
+    from .photo_twin import PHOTO_STAGES, build_from_photos
+
+    if not consent:
+        raise HTTPException(400, "Consent is required: the person in the photos must agree to having a digital twin created.")
+    if not 1 <= len(photos) <= 5:
+        raise HTTPException(400, "Upload between 1 and 5 photos.")
+    saved = [_save_upload(p, Path(p.filename or "photo.jpg").suffix.lower() or ".jpg") for p in photos]
+    voice_path = _save_upload(voice, Path(voice.filename or "voice.wav").suffix.lower() or ".wav") if voice else None
+    avatar_id = new_avatar_id()
+    queued = settings.avatars_dir / avatar_id
+    queued.mkdir(parents=True)
+    media.write_json(queued / "manifest.json", {"avatar_id": avatar_id, "status": "training", "stage": 0, "stages": PHOTO_STAGES, "message": "Queued"})
+
+    def run() -> None:
+        try:
+            build_from_photos(saved, voice_sample=voice_path, name=name, avatar_id=avatar_id)
+        finally:
+            for f in saved + ([voice_path] if voice_path else []):
+                shutil.rmtree(f.parent, ignore_errors=True)
+
+    _pool.submit(run)
+    return {"avatar_id": avatar_id, "status": "training", "stages": PHOTO_STAGES}
+
+
 @app.get("/avatars/{avatar_id}")
 def get_avatar(avatar_id: str) -> dict:
     try:

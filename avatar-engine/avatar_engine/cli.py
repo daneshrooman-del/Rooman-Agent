@@ -23,6 +23,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("create", help="build a digital twin from a reference video")
     c.add_argument("video")
+    cp = sub.add_parser("create-photos", help="build a digital twin from 1-5 photos")
+    cp.add_argument("photos", nargs="+")
+    cp.add_argument("--voice", help="optional audio/video clip (>=6 s) to clone the voice")
     g = sub.add_parser("generate", help="render the twin performing an action")
     g.add_argument("avatar_id")
     g.add_argument("script_or_audio")
@@ -38,6 +41,9 @@ def main(argv: list[str] | None = None) -> int:
         if a.cmd == "create":
             avatar_id = api.create_avatar(a.video, on_progress=_progress)
             print(json.dumps(api.get_avatar(avatar_id), indent=2))
+        elif a.cmd == "create-photos":
+            avatar_id = api.create_avatar_from_photos(a.photos, voice_sample=a.voice, on_progress=_progress)
+            print(json.dumps(api.get_avatar(avatar_id), indent=2))
         elif a.cmd == "generate":
             path = api.generate(a.avatar_id, a.script_or_audio, a.action_type, language=a.language, out_path=a.out, on_progress=_progress)
             print(json.dumps({"video": str(path), "consistency": json.loads(path.with_suffix(".consistency.json").read_text())}, indent=2))
@@ -45,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
             import uvicorn
 
             uvicorn.run("avatar_engine.server:app", host=a.host, port=a.port)
-    except (api.IngestError, api.ActionNotSupported, api.AvatarNotFound, api.AvatarNotReady, ValueError) as e:
+    except (api.IngestError, api.PhotoError, api.ActionNotSupported, api.AvatarNotFound, api.AvatarNotReady, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     except api.ConsistencyError as e:

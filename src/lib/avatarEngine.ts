@@ -82,6 +82,29 @@ export const engine = {
     }
   },
 
+  /** Twin from 1–5 photos (+ optional voice clip). Trained locally by the engine — free. */
+  async createAvatarFromPhotos(name: string, photos: File[], voice: File | null): Promise<Avatar> {
+    const body = new FormData()
+    photos.forEach((p) => body.append('photos', p))
+    if (voice) body.set('voice', voice)
+    body.set('consent', 'true')
+    body.set('name', name)
+    const r = await call<{ avatar_id: string }>('/avatars/photos', { method: 'POST', body })
+    return {
+      id: r.avatar_id,
+      name,
+      kind: 'Photo Avatar',
+      status: 'training',
+      voiceId: `voice_${r.avatar_id}`,
+      createdAt: new Date().toISOString(),
+      hue: 200 + Math.round(Math.random() * 100),
+      trainingProgress: 0,
+      usage: { videos: 0, agents: 0, liveSessions: 0 },
+      languages: ['English', 'Hindi'],
+      engine: true,
+    }
+  },
+
   /** Training state mapped onto the UI's avatar fields. */
   async avatarStatus(
     id: string,

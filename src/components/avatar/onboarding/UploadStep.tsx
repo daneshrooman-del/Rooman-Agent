@@ -1,9 +1,10 @@
 import { useId, useState } from 'react'
-import { AlertCircle, Camera, Clock, Mic, ScanFace, Sparkles, Sun, Upload, Video } from 'lucide-react'
+import { AlertCircle, Camera, Clock, Images, Mic, ScanFace, Sparkles, Sun, Upload, Video } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, SegmentedControl } from '@/components/ui/Form'
 import { CameraRecorder } from './CameraRecorder'
+import { PhotoPicker } from './PhotoPicker'
 import { UploadZone } from '@/components/ui/UploadZone'
 import { ReferencePreview, type ReferenceSource } from './ReferencePreview'
 import { StepHeading } from './StepHeading'
@@ -45,7 +46,7 @@ export function UploadStep({
   focusOnMount?: boolean
 }) {
   const nameId = useId()
-  const [mode, setMode] = useState<'upload' | 'camera'>('upload')
+  const [mode, setMode] = useState<'upload' | 'camera' | 'photos'>(source?.kind === 'photos' ? 'photos' : 'upload')
 
   const accept = (files: File[]) => {
     const file = files[0]
@@ -66,7 +67,7 @@ export function UploadStep({
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] lg:gap-8">
         <div className="min-w-0">
-          {source ? (
+          {source && source.kind !== 'photos' ? (
             <ReferencePreview
               key={source.kind === 'file' ? `${source.file.name}-${source.file.size}-${source.file.lastModified}` : 'sample'}
               source={source}
@@ -79,16 +80,25 @@ export function UploadStep({
           ) : (
             <>
               <SegmentedControl
-                label="How to add your video"
+                label="How to create your avatar"
                 value={mode}
                 onChange={setMode}
                 className="mb-4"
                 options={[
                   { value: 'upload', label: 'Upload video', icon: <Upload aria-hidden /> },
-                  { value: 'camera', label: 'Record with camera', icon: <Camera aria-hidden /> },
+                  { value: 'camera', label: 'Record', icon: <Camera aria-hidden /> },
+                  { value: 'photos', label: 'Photos', icon: <Images aria-hidden /> },
                 ]}
               />
-              {mode === 'camera' ? (
+              {mode === 'photos' ? (
+                <PhotoPicker
+                  photos={source?.kind === 'photos' ? source.photos : []}
+                  voice={source?.kind === 'photos' ? source.voice : null}
+                  error={error}
+                  onError={onError}
+                  onChange={(photos, voice) => onSource(photos.length ? { kind: 'photos', photos, voice } : null)}
+                />
+              ) : mode === 'camera' ? (
                 <CameraRecorder onRecorded={(file) => accept([file])} onCancel={() => setMode('upload')} />
               ) : (
               <UploadZone
