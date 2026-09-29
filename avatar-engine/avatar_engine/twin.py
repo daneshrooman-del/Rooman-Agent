@@ -210,11 +210,19 @@ def build_twin(video_file: Path, on_progress: Progress | None = None, *, avatar_
 
         # 4. Preparing voice
         stage(3, "Preparing voice")
+        # never block the avatar on the voice: if cloning isn't possible, continue with a stock voice
         voice_len = media.probe(d / "voice_clean.wav")["duration"]
-        if voice_len < settings.min_voice_seconds:
-            raise ValueError(f"Only {voice_len:.1f}s of speech found — at least {settings.min_voice_seconds:.0f}s is needed to clone the voice.")
-        with GPU_LOCK:
-            run_worker(settings.xtts_python, "xtts_worker.py", {"op": "clone", "speaker_wav": d / "voice_clean.wav", "out": d / "voice.pt"}, env=_xtts_env())
+        try:
+            if voice_len < settings.min_voice_seconds:
+                raise ValueError(f"only {voice_len:.1f}s of speech found (needs {settings.min_voice_seconds:.0f}s)")
+            with GPU_LOCK:
+                run_worker(settings.xtts_python, "xtts_worker.py", {"op": "clone", "speaker_wav": d / "voice_clean.wav", "out": d / "voice.pt"}, env=_xtts_env())
+            manifest["voice"] = {"type": "cloned"}
+        except Exception as e:
+            from .photo_twin import use_stock_voice
+
+            manifest["voice"] = use_stock_voice(d / "voice.pt")
+            manifest["warnings"].append(f"Couldn't clone your voice ({e}); the stock voice “{manifest['voice']['speaker']}” is used instead.")
 
         # 5. Creating avatar
         stage(4, "Creating avatar")

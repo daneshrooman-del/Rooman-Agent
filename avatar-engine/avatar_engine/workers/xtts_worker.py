@@ -32,12 +32,27 @@ def clone(req):
     return {"voice": req["out"], "device": device}
 
 
+def _stock_speakers():
+    """The 58 studio voices ship as a small speakers_xtts.pth next to the model — reading it takes
+    ~5 s instead of ~100 s for loading the full 1.8 GB model. Falls back to the model if missing."""
+    import glob
+    import os
+
+    import torch
+
+    roots = [os.environ.get("TTS_HOME", ""), os.path.join(os.environ.get("LOCALAPPDATA", ""), "tts"), os.path.expanduser("~/.local/share/tts")]
+    for root in filter(None, roots):
+        for f in glob.glob(os.path.join(root, "*xtts_v2*", "speakers_xtts.pth")):
+            return torch.load(f, weights_only=False)
+    model, _ = _model()
+    return model.speaker_manager.speakers
+
+
 def stock(req):
     """Use one of XTTS-v2's built-in studio speakers when no voice sample exists (photo avatars)."""
     import torch
 
-    model, device = _model()
-    speakers = model.speaker_manager.speakers
+    speakers = _stock_speakers()
     name = req.get("speaker") or ""
     if name not in speakers:
         return {"error": f"Unknown stock voice '{name}'.", "speakers": sorted(speakers)}

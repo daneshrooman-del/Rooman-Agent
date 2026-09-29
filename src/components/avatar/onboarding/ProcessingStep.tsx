@@ -58,7 +58,7 @@ export function ProcessingStep({
     const tick = async () => {
       try {
         const s = await engine.avatarStatus(a.id)
-        updateAvatar(a.id, { status: s.status, trainingProgress: s.trainingProgress, thumbnailUrl: s.thumbnailUrl })
+        updateAvatar(a.id, { status: s.status, trainingProgress: s.trainingProgress, thumbnailUrl: s.thumbnailUrl, voiceLabel: s.voiceLabel })
         setEngineStages(s.stages)
         setEngineStage(s.stage)
         setEngineNote(s.warnings[0] ?? null)
@@ -67,7 +67,7 @@ export function ProcessingStep({
           setError(s.error ?? 'Training failed')
         } else if (s.status === 'ready') {
           window.clearInterval(poll.current)
-          setAvatar((prev) => (prev ? { ...prev, thumbnailUrl: s.thumbnailUrl } : prev))
+          setAvatar((prev) => (prev ? { ...prev, thumbnailUrl: s.thumbnailUrl, voiceLabel: s.voiceLabel } : prev))
           setProgress(100)
           setState('done')
         } else {

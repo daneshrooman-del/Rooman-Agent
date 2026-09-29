@@ -34,6 +34,13 @@ class PhotoError(ValueError):
     """The photos can't be used (message is user-facing)."""
 
 
+def use_stock_voice(out: Path, speaker: str = DEFAULT_STOCK_VOICE) -> dict:
+    """Write XTTS-v2 stock-speaker latents to `out` (fast: reads the small speakers file)."""
+    with GPU_LOCK:
+        r = run_worker(settings.xtts_python, "xtts_worker.py", {"op": "stock", "speaker": speaker, "out": out}, env=_xtts_env())
+    return {"type": "stock", "speaker": r["speaker"]}
+
+
 def _load(path: Path) -> np.ndarray:
     img = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_COLOR)  # unicode-safe on Windows
     if img is None:
@@ -124,18 +131,22 @@ def build_from_photos(
 
         # 4. voice: clone from a clip if given, else a stock XTTS voice
         stage(3, "Preparing voice")
+        cloned = False
         if voice_sample:
-            clean = media.extract_clean_audio(Path(voice_sample), d / "voice_clean.wav")
-            if media.probe(clean)["duration"] < settings.min_voice_seconds:
-                raise PhotoError(f"The voice clip needs at least {settings.min_voice_seconds:.0f} seconds of speech.")
-            with GPU_LOCK:
-                run_worker(settings.xtts_python, "xtts_worker.py", {"op": "clone", "speaker_wav": clean, "out": d / "voice.pt"}, env=_xtts_env())
-            manifest["voice"] = {"type": "cloned"}
-        else:
-            with GPU_LOCK:
-                r = run_worker(settings.xtts_python, "xtts_worker.py", {"op": "stock", "speaker": stock_voice, "out": d / "voice.pt"}, env=_xtts_env())
-            manifest["voice"] = {"type": "stock", "speaker": r["speaker"]}
-            manifest["warnings"].append(f"No voice clip was given, so the stock voice “{r['speaker']}” is used. Add a 10–30 s recording of yourself to use your own voice.")
+            try:
+                clean = media.extract_clean_audio(Path(voice_sample), d / "voice_clean.wav")
+                if media.probe(clean)["duration"] < settings.min_voice_seconds:
+                    raise PhotoError(f"the clip has under {settings.min_voice_seconds:.0f} s of speech")
+                with GPU_LOCK:
+                    run_worker(settings.xtts_python, "xtts_worker.py", {"op": "clone", "speaker_wav": clean, "out": d / "voice.pt"}, env=_xtts_env())
+                manifest["voice"] = {"type": "cloned"}
+                cloned = True
+            except Exception as e:  # never block the avatar on the voice — fall back to a stock voice
+                manifest["warnings"].append(f"Couldn't clone the voice clip ({e}); a stock voice is used instead.")
+        if not cloned:
+            manifest["voice"] = use_stock_voice(d / "voice.pt", stock_voice)
+            if not voice_sample:
+                manifest["warnings"].append(f"No voice clip was given, so the stock voice “{manifest['voice']['speaker']}” is used. Add a 10–30 s recording of yourself to use your own voice.")
 
         stage(4, "Creating avatar")
         manifest.update(status="ready", ready_at=datetime.now(timezone.utc).isoformat(), message="Ready")

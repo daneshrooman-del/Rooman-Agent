@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { AlertCircle, ImagePlus, Mic, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { formatBytes } from '@/lib/format'
@@ -17,11 +17,16 @@ export function validatePhoto(f: File): string | null {
 }
 
 function Thumb({ file, onRemove, index }: { file: File; onRemove: () => void; index: number }) {
-  const url = useMemo(() => URL.createObjectURL(file), [file])
-  useEffect(() => () => URL.revokeObjectURL(url), [url])
+  // create + revoke in the same effect: a memoised URL gets revoked by StrictMode's double effect run
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    const u = URL.createObjectURL(file)
+    setUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [file])
   return (
     <li className="group relative aspect-[3/4] overflow-hidden rounded-[14px] border border-line bg-black">
-      <img src={url} alt={`Photo ${index + 1}`} className="size-full object-cover" />
+      {url && <img src={url} alt={`Photo ${index + 1}`} className="size-full object-cover" />}
       {index === 0 && <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] backdrop-blur">Main</span>}
       <button
         type="button"

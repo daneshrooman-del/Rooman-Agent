@@ -38,6 +38,8 @@ export interface Avatar {
   languages: string[]
   /** true when this avatar is a real digital twin trained by the avatar engine */
   engine?: boolean
+  /** display name of an engine voice that isn't in the workspace voice list */
+  voiceLabel?: string
 }
 
 export interface Video {

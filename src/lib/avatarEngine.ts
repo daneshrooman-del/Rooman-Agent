@@ -45,6 +45,7 @@ interface Manifest {
   error?: string
   warnings?: string[]
   provider?: 'tavus' | 'local'
+  voice?: { type: 'cloned' | 'stock'; speaker?: string }
   /** 0–100 within the current stage (Tavus face training) */
   training_progress?: number
 }
@@ -110,7 +111,7 @@ export const engine = {
   /** Training state mapped onto the UI's avatar fields. */
   async avatarStatus(
     id: string,
-  ): Promise<Pick<Avatar, 'status' | 'trainingProgress' | 'thumbnailUrl'> & { stage: number; stages: string[]; message?: string; warnings: string[]; error?: string }> {
+  ): Promise<Pick<Avatar, 'status' | 'trainingProgress' | 'thumbnailUrl' | 'voiceLabel'> & { stage: number; stages: string[]; message?: string; warnings: string[]; error?: string }> {
     const m = await call<Manifest>(`/avatars/${id}`)
     const total = m.stages.length || 5
     const status = m.status === 'ready' ? 'ready' : m.status === 'failed' ? 'failed' : 'training'
@@ -123,6 +124,7 @@ export const engine = {
       warnings: m.warnings ?? [],
       trainingProgress: status === 'ready' ? 100 : Math.min(99, Math.round((m.stage / total + within) * 100)),
       thumbnailUrl: m.stage >= 2 || status === 'ready' ? `${ENGINE_URL}/avatars/${id}/reference` : undefined,
+      voiceLabel: m.voice ? (m.voice.type === 'cloned' ? 'Your cloned voice' : `${m.voice.speaker} (stock)`) : undefined,
       error: m.error,
     }
   },

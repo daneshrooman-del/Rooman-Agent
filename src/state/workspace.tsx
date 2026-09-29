@@ -69,7 +69,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       reload: () => setNonce((n) => n + 1),
       primaryAvatar: avatars.find((a) => a.primary) ?? avatars.find((a) => a.status === 'ready') ?? avatars[0],
       avatarById: (id) => avatars.find((a) => a.id === id),
-      voiceName: (id) => data?.voices.find((v) => v.id === id)?.name ?? '—',
+      voiceName: (id) => data?.voices.find((v) => v.id === id)?.name ?? avatars.find((a) => a.voiceId === id)?.voiceLabel ?? '—',
       addAvatar: (a) => patch('avatars', (l) => [a, ...l]),
       updateAvatar: (id, p) => patch('avatars', (l) => l.map((a) => (a.id === id ? { ...a, ...p } : a))),
       removeAvatar: (id) => patch('avatars', (l) => l.filter((a) => a.id !== id)),

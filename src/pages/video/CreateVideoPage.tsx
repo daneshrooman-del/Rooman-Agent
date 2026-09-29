@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { engine, engineEnabled, engineSupports, engineSupportsLanguage } from '@/lib/avatarEngine'
@@ -9,6 +9,7 @@ import { useSimulatedJob } from '@/hooks/useSimulatedJob'
 import { DemoNote } from '@/components/ui/States'
 import { useToast } from '@/components/ui/Toast'
 import { useInitialAvatarId } from '@/components/avatar/AvatarPicker'
+import { useObjectUrl } from '@/components/avatar/onboarding/useObjectUrl'
 import { StudioConfigPanel, type StudioSettings } from '@/components/video/StudioConfigPanel'
 import { StudioStage, type StudioPhase } from '@/components/video/StudioStage'
 import { GeneratingPanel, IdleSummary, ReadyPanel } from '@/components/video/StudioFooters'
@@ -60,8 +61,7 @@ export default function CreateVideoPage() {
   const promptOk = s.prompt.trim().length >= PROMPT_MIN
   const generating = phase === 'generating'
 
-  const bgUrl = useMemo(() => (s.background ? URL.createObjectURL(s.background) : null), [s.background])
-  useEffect(() => () => void (bgUrl && URL.revokeObjectURL(bgUrl)), [bgUrl])
+  const bgUrl = useObjectUrl(s.background)
 
   const patch = (p: Partial<StudioSettings>) => {
     setS((prev) => ({ ...prev, ...p }))
