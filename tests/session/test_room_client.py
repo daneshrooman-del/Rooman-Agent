@@ -9,12 +9,25 @@ from livekit import rtc
 from trackb.session.room_client import LiveKitRoomClient
 
 
-class _FakeLocalParticipant:
-    def __init__(self) -> None:
-        self.published_tracks: list[Any] = []
+@dataclass
+class _FakeTrackPublication:
+    sid: str
+    source: Any = None
 
-    async def publish_track(self, track: Any) -> None:
+
+class _FakeLocalParticipant:
+    def __init__(self, identity: str = "agent-local") -> None:
+        self.identity = identity
+        self.published_tracks: list[Any] = []
+        self.published_transcriptions: list[Any] = []
+
+    async def publish_track(self, track: Any) -> _FakeTrackPublication:
+        publication = _FakeTrackPublication(sid=f"TR_local_{len(self.published_tracks)}")
         self.published_tracks.append(track)
+        return publication
+
+    async def publish_transcription(self, transcription: Any) -> None:
+        self.published_transcriptions.append(transcription)
 
 
 class _FakeRoom:
@@ -53,6 +66,7 @@ class _FakeRoom:
 @dataclass
 class _FakeParticipant:
     identity: str
+    track_publications: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -229,3 +243,61 @@ async def test_disconnect_without_publishing_still_disconnects_room() -> None:
     await client.disconnect()
 
     assert room.disconnect_called is True
+
+
+@pytest.mark.asyncio
+async def test_audio_frames_discovers_remote_identity_and_microphone_track_sid() -> None:
+    mic_publication = _FakeTrackPublication(sid="TR_mic", source=rtc.TrackSource.SOURCE_MICROPHONE)
+    other_publication = _FakeTrackPublication(sid="TR_cam", source=rtc.TrackSource.SOURCE_CAMERA)
+    participant = _FakeParticipant(
+        identity="caller-1",
+        track_publications={"TR_mic": mic_publication, "TR_cam": other_publication},
+    )
+    room = _FakeRoom(remote_participants={"caller-1": participant})
+    factory = _AudioStreamFactory(frames=[])
+    client = _make_client(room, audio_stream_factory=factory)
+
+    assert client.remote_identity is None
+    assert client.remote_track_sid is None
+
+    async for _ in client.audio_frames():
+        pass
+
+    assert client.remote_identity == "caller-1"
+    assert client.remote_track_sid == "TR_mic"
+
+
+@pytest.mark.asyncio
+async def test_local_identity_and_track_sid_populated_after_publish() -> None:
+    room = _FakeRoom()
+    client = _make_client(room)
+
+    assert client.local_identity == "agent-local"
+    assert client.local_track_sid is None
+
+    await client.publish_audio(b"\x00\x01" * 8)
+
+    assert client.local_track_sid == "TR_local_0"
+
+
+@pytest.mark.asyncio
+async def test_publish_transcription_calls_local_participant_publish_transcription() -> None:
+    room = _FakeRoom()
+    client = _make_client(room)
+
+    await client.publish_transcription(
+        participant_identity="caller-1",
+        track_sid="TR_mic",
+        segment_id="seg-1",
+        text="hello there",
+        final=True,
+    )
+
+    published = room.local_participant.published_transcriptions
+    assert len(published) == 1
+    transcription = published[0]
+    assert transcription.participant_identity == "caller-1"
+    assert transcription.track_sid == "TR_mic"
+    assert transcription.segments[0].id == "seg-1"
+    assert transcription.segments[0].text == "hello there"
+    assert transcription.segments[0].final is True

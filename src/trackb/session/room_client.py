@@ -40,6 +40,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import structlog
 from livekit import rtc
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +48,13 @@ DEFAULT_SAMPLE_RATE = 16_000
 DEFAULT_NUM_CHANNELS = 1
 _PUBLISHED_TRACK_NAME = "trackb-agent-voice"
 _BYTES_PER_SAMPLE = 2  # PCM16
+
+TRANSCRIPTION_PUBLISH_TIMEOUT_SECONDS = 5.0
+_TRANSCRIPTION_RETRY = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, max=4),
+    reraise=True,
+)
 
 
 @runtime_checkable
@@ -65,6 +73,41 @@ class RoomClient(Protocol):
 
     async def disconnect(self) -> None:
         """Leave the room and release any underlying resources."""
+        ...
+
+    @property
+    def local_identity(self) -> str:
+        """Identity of this worker's own (local) participant in the room."""
+        ...
+
+    @property
+    def local_track_sid(self) -> str | None:
+        """Sid of the locally-published audio track, or `None` before anything has been
+        published yet (see `publish_audio`)."""
+        ...
+
+    @property
+    def remote_identity(self) -> str | None:
+        """Identity of the subscribed remote participant, or `None` before one has been
+        found (see `audio_frames`)."""
+        ...
+
+    @property
+    def remote_track_sid(self) -> str | None:
+        """Sid of the remote participant's subscribed microphone track, or `None` before one
+        has been found (see `audio_frames`)."""
+        ...
+
+    async def publish_transcription(
+        self,
+        *,
+        participant_identity: str,
+        track_sid: str,
+        segment_id: str,
+        text: str,
+        final: bool,
+    ) -> None:
+        """Publish one transcription segment for `participant_identity`'s `track_sid`."""
         ...
 
 
@@ -111,6 +154,9 @@ class LiveKitRoomClient:
 
         self._audio_source: Any | None = None
         self._published = False
+        self._local_track_sid: str | None = None
+        self._remote_identity: str | None = None
+        self._remote_track_sid: str | None = None
 
     async def connect(self, *, url: str = "", token: str = "") -> None:
         """No-op beyond asserting the room is already connected.
@@ -148,12 +194,22 @@ class LiveKitRoomClient:
         finally:
             self._room.off("participant_connected", _on_participant_connected)
 
+    @staticmethod
+    def _find_microphone_track_sid(participant: rtc.RemoteParticipant) -> str | None:
+        for publication in participant.track_publications.values():
+            if publication.source == rtc.TrackSource.SOURCE_MICROPHONE:
+                return publication.sid
+        return None
+
     async def audio_frames(self) -> AsyncIterator[bytes]:
         participant = await self._wait_for_remote_participant()
+        self._remote_identity = participant.identity
+        self._remote_track_sid = self._find_microphone_track_sid(participant)
         logger.info(
             "room_client_subscribed_audio",
             room=getattr(self._room, "name", None),
             participant=participant.identity,
+            track_sid=self._remote_track_sid,
         )
         stream = self._audio_stream_factory(
             participant=participant,
@@ -175,9 +231,14 @@ class LiveKitRoomClient:
             return
         self._audio_source = self._audio_source_factory(self._sample_rate, self._num_channels)
         track = self._local_audio_track_factory(_PUBLISHED_TRACK_NAME, self._audio_source)
-        await self._room.local_participant.publish_track(track)
+        publication = await self._room.local_participant.publish_track(track)
+        self._local_track_sid = getattr(publication, "sid", None)
         self._published = True
-        logger.info("room_client_audio_published", room=getattr(self._room, "name", None))
+        logger.info(
+            "room_client_audio_published",
+            room=getattr(self._room, "name", None),
+            track_sid=self._local_track_sid,
+        )
 
     async def publish_audio(self, audio: bytes) -> None:
         await self._ensure_audio_published()
@@ -198,3 +259,55 @@ class LiveKitRoomClient:
                 await aclose()
         await self._room.disconnect()
         logger.info("room_client_disconnected", room=getattr(self._room, "name", None))
+
+    @property
+    def local_identity(self) -> str:
+        identity: str = self._room.local_participant.identity
+        return identity
+
+    @property
+    def local_track_sid(self) -> str | None:
+        return self._local_track_sid
+
+    @property
+    def remote_identity(self) -> str | None:
+        return self._remote_identity
+
+    @property
+    def remote_track_sid(self) -> str | None:
+        return self._remote_track_sid
+
+    @_TRANSCRIPTION_RETRY
+    async def _publish_transcription_with_retry(self, transcription: rtc.Transcription) -> None:
+        await asyncio.wait_for(
+            self._room.local_participant.publish_transcription(transcription),
+            timeout=TRANSCRIPTION_PUBLISH_TIMEOUT_SECONDS,
+        )
+
+    async def publish_transcription(
+        self,
+        *,
+        participant_identity: str,
+        track_sid: str,
+        segment_id: str,
+        text: str,
+        final: bool,
+    ) -> None:
+        """Publish one transcription segment. Raises after exhausting `_TRANSCRIPTION_RETRY`'s
+        retry budget -- callers (see `SessionWorker`) are expected to catch and log rather than
+        let a transcription-publish failure take down the whole session."""
+        transcription = rtc.Transcription(
+            participant_identity=participant_identity,
+            track_sid=track_sid,
+            segments=[
+                rtc.TranscriptionSegment(
+                    id=segment_id,
+                    text=text,
+                    start_time=0,
+                    end_time=0,
+                    language="",
+                    final=final,
+                )
+            ],
+        )
+        await self._publish_transcription_with_retry(transcription)

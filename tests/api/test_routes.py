@@ -306,6 +306,144 @@ def test_conversation_start_returns_503_when_livekit_room_creation_fails(
     assert response.status_code == 503
 
 
+def _make_spec_with_tools_and_workflow(agent_id: str) -> AgentSpec:
+    from trackb.contracts.models import ToolBinding
+
+    return AgentSpec(
+        agent_id=agent_id,
+        owner="owner-1",
+        purpose="Help customers troubleshoot their broadband connection quickly and politely",
+        persona_prompt="You are a calm, patient support agent who never rushes the caller.",
+        flow_graph=FlowGraph(
+            entry_state="greet",
+            states=[
+                FlowState(name="greet", objective="Welcome the caller", is_terminal=False),
+                FlowState(
+                    name="diagnose", objective="Identify the fault", is_terminal=False
+                ),
+                FlowState(name="close", objective="Confirm resolution", is_terminal=True),
+            ],
+        ),
+        tool_bindings=[
+            ToolBinding(name="lookup_account", description="Look up account by phone number")
+        ],
+        guardrails=["never share billing details without verifying identity"],
+        languages=["en", "hi"],
+        channels=["phone", "web"],
+        avatar_id="avatar-1",
+        voice_id="voice-1",
+        status="active",
+        created_from_session_id="session-1",
+    )
+
+
+def test_get_frontend_agent_not_found_returns_404(client: TestClient) -> None:
+    response = client.get("/frontend/agents/does-not-exist")
+
+    assert response.status_code == 404
+
+
+def test_get_frontend_agent_maps_fields_to_frontend_shape(
+    client: TestClient, test_engine: Engine
+) -> None:
+    spec = _make_spec_with_tools_and_workflow("agent-fe-1")
+    save_agent_spec(spec, engine=test_engine)
+
+    response = client.get("/frontend/agents/agent-fe-1")
+
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["id"] == "agent-fe-1"
+    assert body["name"]  # non-empty, synthesized from purpose
+    assert body["status"] == "live"  # AgentSpec.status "active" -> frontend "live"
+    assert body["avatarId"] == "avatar-1"
+    assert body["voiceId"] == "voice-1"
+    assert body["purpose"] == spec.purpose
+    assert body["guardrails"] == spec.guardrails
+    assert body["languages"] == ["en", "hi"]
+    assert body["channels"] == ["phone", "web"]
+
+    assert body["tools"] == [
+        {
+            "id": "lookup_account",
+            "name": "lookup_account",
+            "description": "Look up account by phone number",
+            "enabled": True,
+        }
+    ]
+
+    workflow_by_id = {node["id"]: node for node in body["workflow"]}
+    assert workflow_by_id["greet"]["kind"] == "start"
+    assert workflow_by_id["diagnose"]["kind"] == "step"
+    assert workflow_by_id["close"]["kind"] == "end"
+    assert workflow_by_id["diagnose"]["description"] == "Identify the fault"
+
+    # Best-effort / known-gap fields.
+    assert body["goals"] == ["Welcome the caller", "Identify the fault"]
+    assert body["personality"] == spec.persona_prompt
+    assert body["knowledge"] == []
+    assert body["activity"] == []
+    assert body["stats"] == {
+        "conversations": 0,
+        "completionRate": 0,
+        "activeToday": 0,
+        "avgDurationSec": 0,
+    }
+
+    assert body["createdAt"]
+    assert body["updatedAt"] == body["createdAt"]
+
+
+def test_get_frontend_agent_status_mapping_for_draft_and_disabled(
+    client: TestClient, test_engine: Engine
+) -> None:
+    draft_spec = _make_spec("agent-draft")  # default status="draft"
+    save_agent_spec(draft_spec, engine=test_engine)
+
+    disabled_spec = _make_spec("agent-disabled").model_copy(update={"status": "disabled"})
+    save_agent_spec(disabled_spec, engine=test_engine)
+
+    draft_response = client.get("/frontend/agents/agent-draft")
+    disabled_response = client.get("/frontend/agents/agent-disabled")
+
+    assert draft_response.json()["status"] == "draft"
+    assert disabled_response.json()["status"] == "paused"
+
+
+def test_list_frontend_agents_returns_all_persisted_specs(
+    client: TestClient, test_engine: Engine
+) -> None:
+    save_agent_spec(_make_spec("agent-1"), engine=test_engine)
+    save_agent_spec(_make_spec("agent-2"), engine=test_engine)
+
+    response = client.get("/frontend/agents")
+
+    assert response.status_code == 200
+    ids = {agent["id"] for agent in response.json()}
+    assert ids == {"agent-1", "agent-2"}
+
+
+def test_cors_preflight_allows_configured_frontend_origin(client: TestClient) -> None:
+    response = client.options(
+        "/agents",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_cors_actual_request_echoes_allow_origin_header(client: TestClient) -> None:
+    response = client.get("/agents", headers={"Origin": "http://localhost:5173"})
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
 def _minimal_pdf_bytes(text: str) -> bytes:
     """Build a real, minimally-valid one-page PDF containing `text`, using pypdf's own writer
     -- proves the upload route's `pypdf.PdfReader.extract_text()` usage against real PDF bytes

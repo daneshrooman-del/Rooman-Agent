@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-flash-latest"
 
+    cors_allow_origins: list[str] = ["http://localhost:5173"]
+    """Origins allowed to call this API cross-origin (`CORSMiddleware` in `api/app.py`).
+    Defaults to the Vite dev server's default port (confirmed from this repo's own
+    `vite.config.ts`, which has no port override) -- override via
+    `TRACKB_CORS_ALLOW_ORIGINS` (a JSON array, per `pydantic-settings`' list-from-env parsing)
+    for any other frontend deployment."""
+
     max_concurrent_sessions: int = 10
     session_init_timeout_seconds: float = 15.0
     participant_wait_timeout_seconds: float = 120.0

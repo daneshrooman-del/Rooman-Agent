@@ -14,6 +14,7 @@ need to change.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
@@ -143,15 +144,15 @@ class SessionWorker:
     async def _pump_transcripts_out(self) -> None:
         try:
             async for event in self._stt.events():
+                utterance = TranscribedUtterance(
+                    session_id=self._session_id,
+                    text=event.text,
+                    is_final=event.is_final,
+                )
                 handler = self._on_utterance
                 if handler is not None:
-                    await handler(
-                        TranscribedUtterance(
-                            session_id=self._session_id,
-                            text=event.text,
-                            is_final=event.is_final,
-                        )
-                    )
+                    await handler(utterance)
+                await self._publish_caller_transcription(utterance)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -159,6 +160,72 @@ class SessionWorker:
                 "session_transcript_pump_failed", session_id=self._session_id, error=str(exc)
             )
             raise
+
+    async def _publish_caller_transcription(self, utterance: TranscribedUtterance) -> None:
+        """Publish the human caller's utterance (interim or final) as a room transcription,
+        addressed to the remote participant/track `LiveKitRoomClient.audio_frames()` already
+        discovered. Skipped (with a log line) rather than raised if that identity/track isn't
+        known yet -- e.g. a race where STT somehow produces an event before the audio pump has
+        found a remote participant."""
+        identity = getattr(self._room_client, "remote_identity", None)
+        track_sid = getattr(self._room_client, "remote_track_sid", None)
+        if not identity or not track_sid:
+            logger.debug(
+                "caller_transcription_publish_skipped_no_remote_track",
+                session_id=self._session_id,
+            )
+            return
+        await self._publish_transcription_safe(
+            participant_identity=identity,
+            track_sid=track_sid,
+            text=utterance.text,
+            final=utterance.is_final,
+        )
+
+    async def _publish_agent_transcription(self, text: str) -> None:
+        """Publish the agent's own spoken line as a room transcription, addressed to the local
+        participant/track. Always `final=True` -- unlike STT output, the agent's lines aren't
+        interim. Skipped (with a log line), not raised, if the local track isn't published yet
+        (shouldn't happen in practice: `say_audio()` calls `publish_audio()`, which publishes the
+        track, before this runs)."""
+        identity = getattr(self._room_client, "local_identity", None)
+        track_sid = getattr(self._room_client, "local_track_sid", None)
+        if not identity or not track_sid:
+            logger.debug(
+                "agent_transcription_publish_skipped_no_local_track",
+                session_id=self._session_id,
+            )
+            return
+        await self._publish_transcription_safe(
+            participant_identity=identity,
+            track_sid=track_sid,
+            text=text,
+            final=True,
+        )
+
+    async def _publish_transcription_safe(
+        self, *, participant_identity: str, track_sid: str, text: str, final: bool
+    ) -> None:
+        """Publish one transcription segment, catching and logging any failure rather than
+        letting it propagate -- losing a transcript line is much less bad than losing the whole
+        conversation over it. `RoomClient.publish_transcription()` already retries transient
+        failures itself (see `room_client.py`); this only guards against it exhausting that
+        budget, or against a `RoomClient` implementation that doesn't support it at all."""
+        try:
+            await self._room_client.publish_transcription(
+                participant_identity=participant_identity,
+                track_sid=track_sid,
+                segment_id=str(uuid.uuid4()),
+                text=text,
+                final=final,
+            )
+        except Exception as exc:
+            logger.error(
+                "session_transcription_publish_failed",
+                session_id=self._session_id,
+                participant_identity=participant_identity,
+                error=str(exc),
+            )
 
     async def speak(self, text: str) -> None:
         """Synthesize `text` (via the injected `tts` function) and publish it to the room."""
@@ -169,11 +236,20 @@ class SessionWorker:
                 "AvatarServiceClient.generate())."
             )
         audio = await self._tts(text)
-        await self.say_audio(audio)
+        await self.say_audio(audio, text=text)
 
-    async def say_audio(self, audio: bytes) -> None:
-        """Publish already-synthesized audio to the room."""
+    async def say_audio(self, audio: bytes, *, text: str | None = None) -> None:
+        """Publish already-synthesized audio to the room.
+
+        `text` is optional and purely for transcription purposes: when provided (as `speak()`
+        always does), it's published as the agent's own transcription segment alongside the
+        audio -- see `_publish_agent_transcription`. Callers with no associated text (e.g.
+        Track A's `AvatarServiceClient.generate()` output) can omit it and just publish audio,
+        exactly as before.
+        """
         await self._room_client.publish_audio(audio)
+        if text is not None:
+            await self._publish_agent_transcription(text)
 
     async def leave(self) -> None:
         """Stop pumping, flush any buffered audio through STT, and disconnect.

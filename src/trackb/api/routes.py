@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import io
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -27,6 +29,10 @@ from trackb.api.conversation import run_conversation
 from trackb.api.deps import get_avatar_client, get_db_engine, get_livekit_admin, get_session_store
 from trackb.api.schemas import (
     ConversationStartResponse,
+    FrontendAgent,
+    FrontendAgentStats,
+    FrontendAgentTool,
+    FrontendWorkflowNode,
     IntakeStartRequest,
     IntakeStartResponse,
     ReferenceDocumentUploadResponse,
@@ -34,8 +40,13 @@ from trackb.api.schemas import (
 from trackb.api.sessions import create_session
 from trackb.config import get_settings
 from trackb.contracts.avatar_client import AvatarServiceClient
-from trackb.contracts.models import AgentSpec
-from trackb.provisioning.store import get_agent_spec, list_agent_specs
+from trackb.contracts.models import AgentSpec, FlowGraph, FlowState
+from trackb.provisioning.store import (
+    get_agent_spec,
+    get_agent_spec_with_created_at,
+    list_agent_specs,
+    list_agent_specs_with_created_at,
+)
 from trackb.session.livekit_admin import LiveKitAdmin, LiveKitAdminError
 from trackb.session.redis_store import RedisSessionStore
 
@@ -196,6 +207,96 @@ async def _existing_agent_spec(
     if spec is None:
         raise HTTPException(status_code=404, detail=f"agent not found: {agent_id}")
     return spec
+
+
+_FRONTEND_STATUS_MAP: dict[str, Literal["live", "paused", "draft"]] = {
+    "draft": "draft",
+    "active": "live",
+    "disabled": "paused",
+}
+_FRONTEND_NAME_MAX_LENGTH = 40
+
+
+def _synthesize_frontend_name(purpose: str) -> str:
+    name = purpose.strip()[:_FRONTEND_NAME_MAX_LENGTH].strip()
+    return name or "Unnamed agent"
+
+
+def _frontend_workflow_kind(
+    state: FlowState, flow_graph: FlowGraph
+) -> Literal["start", "step", "end", "decision", "tool", "handoff"]:
+    """`"start"` takes priority over `"end"` for a (degenerate) single-state graph whose only
+    state is both the entry state and terminal."""
+    if state.name == flow_graph.entry_state:
+        return "start"
+    if state.is_terminal:
+        return "end"
+    return "step"
+
+
+def _created_at_iso(created_at: datetime) -> str:
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return created_at.isoformat()
+
+
+def _to_frontend_agent(spec: AgentSpec, created_at: datetime) -> FrontendAgent:
+    """Translate a persisted `AgentSpec` into the frontend's `Agent` wire shape -- see
+    `FrontendAgent`'s docstring (`api/schemas.py`) for the field-mapping decisions, especially
+    the best-effort ones (`name`, `caller`, `goals`, `personality`) `AgentSpec` has no direct
+    equivalent for."""
+    created_iso = _created_at_iso(created_at)
+    return FrontendAgent(
+        id=spec.agent_id,
+        name=_synthesize_frontend_name(spec.purpose),
+        status=_FRONTEND_STATUS_MAP[spec.status],
+        avatarId=spec.avatar_id,
+        voiceId=spec.voice_id,
+        purpose=spec.purpose,
+        caller="",
+        goals=[state.objective for state in spec.flow_graph.states if not state.is_terminal],
+        personality=spec.persona_prompt,
+        guardrails=list(spec.guardrails),
+        languages=list(spec.languages),
+        channels=list(spec.channels),
+        tools=[
+            FrontendAgentTool(id=binding.name, name=binding.name, description=binding.description)
+            for binding in spec.tool_bindings
+        ],
+        workflow=[
+            FrontendWorkflowNode(
+                id=state.name,
+                label=state.name,
+                kind=_frontend_workflow_kind(state, spec.flow_graph),
+                description=state.objective,
+            )
+            for state in spec.flow_graph.states
+        ],
+        stats=FrontendAgentStats(),
+        createdAt=created_iso,
+        updatedAt=created_iso,
+    )
+
+
+@router.get("/frontend/agents/{agent_id}", response_model=FrontendAgent)
+async def get_frontend_agent(
+    agent_id: str, engine: Engine = Depends(get_db_engine)  # noqa: B008
+) -> FrontendAgent:
+    result = get_agent_spec_with_created_at(agent_id, engine=engine)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"agent not found: {agent_id}")
+    spec, created_at = result
+    return _to_frontend_agent(spec, created_at)
+
+
+@router.get("/frontend/agents", response_model=list[FrontendAgent])
+async def list_frontend_agents(
+    engine: Engine = Depends(get_db_engine),  # noqa: B008
+) -> list[FrontendAgent]:
+    return [
+        _to_frontend_agent(spec, created_at)
+        for spec, created_at in list_agent_specs_with_created_at(engine=engine)
+    ]
 
 
 @router.post(

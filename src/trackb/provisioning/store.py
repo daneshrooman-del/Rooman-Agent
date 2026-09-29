@@ -66,6 +66,23 @@ def get_agent_spec(agent_id: str, *, engine: Engine | None = None) -> AgentSpec 
         return AgentSpec.model_validate_json(record.data)
 
 
+def get_agent_spec_with_created_at(
+    agent_id: str, *, engine: Engine | None = None
+) -> tuple[AgentSpec, datetime] | None:
+    """Like `get_agent_spec`, but also returns the row's `created_at` -- needed by the
+    `GET /frontend/agents*` routes (`api/routes.py`), whose wire format has a `createdAt` field
+    `AgentSpec` itself doesn't carry. Added rather than changing `get_agent_spec`'s return type,
+    since other code (Track A/C's contract, `conversation_entrypoint._resolve_agent_spec`, etc.)
+    depends on `get_agent_spec`/`list_agent_specs` returning `AgentSpec` only.
+    """
+    engine = engine or get_engine()
+    with Session(engine) as session:
+        record = session.get(AgentSpecRecord, agent_id)
+        if record is None:
+            return None
+        return AgentSpec.model_validate_json(record.data), record.created_at
+
+
 def list_agent_specs(*, engine: Engine | None = None) -> list[AgentSpec]:
     engine = engine or get_engine()
     with Session(engine) as session:
@@ -75,3 +92,20 @@ def list_agent_specs(*, engine: Engine | None = None) -> list[AgentSpec]:
         # for order_by without the (unconfigured) sqlmodel mypy plugin.
         ordered = sorted(records, key=lambda record: record.created_at)
         return [AgentSpec.model_validate_json(record.data) for record in ordered]
+
+
+def list_agent_specs_with_created_at(
+    *, engine: Engine | None = None
+) -> list[tuple[AgentSpec, datetime]]:
+    """Like `list_agent_specs`, but also returns each row's `created_at` -- see
+    `get_agent_spec_with_created_at`'s docstring for why this exists as a separate function
+    rather than changing `list_agent_specs` itself. A separate query rather than looping
+    `get_agent_spec_with_created_at` per id, to avoid an N+1 query for `GET /frontend/agents`.
+    """
+    engine = engine or get_engine()
+    with Session(engine) as session:
+        records = session.exec(select(AgentSpecRecord)).all()
+        ordered = sorted(records, key=lambda record: record.created_at)
+        return [
+            (AgentSpec.model_validate_json(record.data), record.created_at) for record in ordered
+        ]
