@@ -63,6 +63,11 @@ class Settings:
     tavus_model: str = field(default_factory=lambda: os.environ.get("TAVUS_MODEL", "phoenix-4.5"))
     # Where Tavus downloads training videos from. Empty = start a Cloudflare quick tunnel automatically.
     public_base_url: str = field(default_factory=lambda: os.environ.get("AVATAR_ENGINE_PUBLIC_URL", "").rstrip("/"))
+    # Video renderer for local avatars: "magichour" (hosted Talking Photo, no GPU) or "sadtalker" (this machine).
+    # Default: magichour when a MAGICHOUR_API_KEY is configured.
+    magichour_api_key: str = field(default_factory=lambda: os.environ.get("MAGICHOUR_API_KEY", ""))
+    video_renderer: str = field(default_factory=lambda: os.environ.get("AVATAR_ENGINE_VIDEO_RENDERER", "magichour" if os.environ.get("MAGICHOUR_API_KEY") else "sadtalker").lower())
+    magichour_mode: str = field(default_factory=lambda: os.environ.get("MAGICHOUR_MODE", "realistic"))
     # Voice cloning at avatar creation is off for now: avatars are face-only and videos use a stock voice.
     clone_voice: bool = field(default_factory=lambda: os.environ.get("AVATAR_ENGINE_CLONE_VOICE") == "1")
     port: int = field(default_factory=lambda: int(os.environ.get("AVATAR_ENGINE_PORT", "8100")))

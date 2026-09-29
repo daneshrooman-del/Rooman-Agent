@@ -91,38 +91,42 @@ def render(
 
         # motion: animate the twin's prepared 3D face with the speech
         stage(2)
-        prep = media.read_json(d / "sadtalker" / "prep.json")
-        last = [-1]
+        extra: dict = {}
+        if settings.video_renderer == "magichour":
+            extra = _render_magichour(d, speech, work, on_progress)
+        else:
+            prep = media.read_json(d / "sadtalker" / "prep.json")
+            last = [-1]
 
-        def motion_log(line: str) -> None:
-            # SadTalker's tqdm bars: rendering is ~85% of the step, pasting back into the frame the rest
-            m = _TQDM.search(line)
-            if not m or not on_progress:
-                return
-            pct = int(m.group(2))
-            overall = round(pct * 0.85) if m.group(1) == "Face Renderer" else 85 + round(pct * 0.15)
-            if overall >= last[0] + 2:
-                last[0] = overall
-                on_progress(2, f"{GENERATION_STAGES[2]} · {overall}%")
+            def motion_log(line: str) -> None:
+                # SadTalker's tqdm bars: rendering is ~85% of the step, pasting back into the frame the rest
+                m = _TQDM.search(line)
+                if not m or not on_progress:
+                    return
+                pct = int(m.group(2))
+                overall = round(pct * 0.85) if m.group(1) == "Face Renderer" else 85 + round(pct * 0.15)
+                if overall >= last[0] + 2:
+                    last[0] = overall
+                    on_progress(2, f"{GENERATION_STAGES[2]} · {overall}%")
 
-        with GPU_LOCK:
-            run_worker(
-                settings.sadtalker_python, "sadtalker_worker.py",
-                {
-                    "op": "render", "prep": prep, "prep_dir": d / "sadtalker", "image": d / "reference.png",
-                    "audio": drive, "out": work / "raw.mp4", "work_dir": work / "st", "size": settings.render_size,
-                    "preprocess": "full", "still": spec.still, "pose_style": spec.pose_style,
-                    "use_ref_pose": spec.use_ref_pose and bool(prep.get("ref_coeff")), "expression_scale": spec.expression_scale,
-                },
-                cwd=settings.sadtalker_dir,
-                on_log=motion_log,
-            )
-        media.mux(work / "raw.mp4", speech, work / "final.mp4")  # full-quality speech instead of the 16 kHz drive track
+            with GPU_LOCK:
+                run_worker(
+                    settings.sadtalker_python, "sadtalker_worker.py",
+                    {
+                        "op": "render", "prep": prep, "prep_dir": d / "sadtalker", "image": d / "reference.png",
+                        "audio": drive, "out": work / "raw.mp4", "work_dir": work / "st", "size": settings.render_size,
+                        "preprocess": "full", "still": spec.still, "pose_style": spec.pose_style,
+                        "use_ref_pose": spec.use_ref_pose and bool(prep.get("ref_coeff")), "expression_scale": spec.expression_scale,
+                    },
+                    cwd=settings.sadtalker_dir,
+                    on_log=motion_log,
+                )
+            media.mux(work / "raw.mp4", speech, work / "final.mp4")  # full-quality speech instead of the 16 kHz drive track
 
         # identity check on every frame
         stage(3)
         report = check_video(work / "final.mp4", np.load(d / "identity.npy")).to_dict()
-        report.update(avatar_id=avatar_id, action=action.value)
+        report.update(avatar_id=avatar_id, action=action.value, **extra)
         if report["verdict"] == "rejected":
             quarantine = settings.outputs_dir / "rejected" / out.name
             quarantine.parent.mkdir(parents=True, exist_ok=True)
@@ -136,3 +140,32 @@ def render(
         return out, report
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _render_magichour(d: Path, speech: Path, work: Path, on_progress: Callable[[int, str], None] | None) -> dict:
+    """Magic Hour AI Talking Photo: the avatar's reference photo + speech -> talking video (no local GPU)."""
+    from .providers import magichour as mh
+
+    mode = settings.magichour_mode
+    seconds = media.probe(speech)["duration"]
+    need = mh.estimate_credits(seconds, mode)
+    have = mh.credits()
+    if need > have:  # check before spending anything
+        per_s = mh.CREDITS_PER_SECOND[mode]
+        raise mh.NotEnoughCredits(
+            f"This {seconds:.1f}s video needs about {need} Magic Hour credits but the account has {have}. "
+            f"Shorten the script to about {max(1, have // per_s)} seconds or add credits."
+        )
+    if on_progress:
+        on_progress(2, f"{GENERATION_STAGES[2]} · uploading")
+    mp3 = work / "speech.mp3"
+    media.ffmpeg("-i", speech, "-vn", "-ac", "1", "-ar", "44100", "-b:a", "128k", mp3)
+    image_fp = mh.upload(d / "reference.png", "image")
+    audio_fp = mh.upload(mp3, "audio")
+    job = mh.create_talking_photo(image_fp, audio_fp, seconds, mode=mode, name=f"{d.name} talk")
+    if on_progress:
+        on_progress(2, f"{GENERATION_STAGES[2]} · rendering on Magic Hour")
+    v = mh.wait_video(job["id"])
+    mh.download(v["downloads"][0]["url"], work / "raw.mp4")
+    media.mux(work / "raw.mp4", speech, work / "final.mp4")
+    return {"renderer": "magichour", "magichour_video_id": job["id"], "credits_charged": v.get("credits_charged", job.get("credits_charged"))}
