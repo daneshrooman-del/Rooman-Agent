@@ -28,6 +28,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/** LiveKit room credentials returned by the two "start a live session" endpoints. */
+export interface LiveSessionHandle {
+  room_name: string
+  livekit_url: string
+  token: string
+}
+
 export interface WorkspaceSnapshot {
   user: User
   workspace: Workspace
@@ -62,12 +69,17 @@ export const api = {
       request<Avatar[]>('/avatars'),
       request<Voice[]>('/voices'),
       request<Video[]>('/videos'),
-      request<Agent[]>('/agents'),
+      request<Agent[]>('/frontend/agents'),
       request<LiveSession[]>('/live-sessions'),
       request<Asset[]>('/assets'),
       request<UsagePoint[]>('/analytics/usage'),
     ])
     return { user, workspace, avatars, voices, videos, agents, liveSessions, assets, usage }
+  },
+
+  /** Fetches a single agent directly (the frontend's own Agent shape, camelCase). */
+  async getAgent(id: string): Promise<Agent> {
+    return request<Agent>(`/frontend/agents/${id}`)
   },
 
   /** Upload a reference video and begin avatar training. */
@@ -135,6 +147,31 @@ export const api = {
       return agent
     }
     return request<Agent>('/agents', { method: 'POST', body: JSON.stringify(agent) })
+  },
+
+  /* -------------------------------------------------------- Live sessions
+     Real-time voice sessions run over LiveKit; there is nothing meaningful
+     to simulate for a live WebRTC session in demo mode, so these three only
+     have a real-mode implementation — callers must check `isDemoMode`
+     themselves before calling. */
+
+  /** Starts the Agent Builder's live intake conversation for a new agent. */
+  async startIntakeSession(owner: string): Promise<LiveSessionHandle & { session_id: string; owner: string; avatar_id: string | null; status: string }> {
+    return request(`/intake/start`, { method: 'POST', body: JSON.stringify({ owner }) })
+  },
+
+  /** Starts a live conversation with an already-deployed agent (Live AI / Live Test). */
+  async startAgentConversation(agentId: string): Promise<LiveSessionHandle & { session_id: string; agent_id: string; status: string }> {
+    return request(`/agents/${agentId}/conversation/start`, { method: 'POST' })
+  },
+
+  /** Uploads a reference document (.txt/.md/.pdf) into an in-progress intake session. */
+  async uploadReferenceDocument(sessionId: string, file: File): Promise<{ session_id: string; filename: string; characters_extracted: number; documents_count: number }> {
+    const body = new FormData()
+    body.set('file', file)
+    const res = await fetch(`${BASE}/intake/${sessionId}/documents`, { method: 'POST', body, credentials: 'include' })
+    if (!res.ok) throw new Error(`Document upload failed (${res.status})`)
+    return res.json()
   },
 
   async deleteAvatar(id: string): Promise<void> {

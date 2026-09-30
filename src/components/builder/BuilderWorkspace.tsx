@@ -42,6 +42,7 @@ export function BuilderWorkspace({
     names: (cfg) => ({ avatar: avatarById(cfg.avatarId)?.name ?? 'your avatar', voice: voiceName(cfg.voiceId) }),
     fromLive: fromLive ? { ...fromLive, avatarName: avatar?.name } : undefined,
     initialPrompt,
+    owner: data?.user.email ?? data?.user.id,
   })
 
   const running = b.state === 'running' || b.typing

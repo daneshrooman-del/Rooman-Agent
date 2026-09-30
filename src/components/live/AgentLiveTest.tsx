@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { AudioLines, BookOpen, GitBranch, RotateCcw, ShieldCheck, Wrench, type LucideIcon } from 'lucide-react'
 import type { Agent } from '@/types'
+import { api } from '@/lib/api'
 import { useWorkspace } from '@/state/workspace'
 import { Button, DemoNote, StatusIndicator } from '@/components/ui'
 import { AvatarChip } from '@/components/avatar/AvatarPreview'
@@ -38,6 +39,7 @@ export default function AgentLiveTest({ agent }: { agent: Agent }) {
     autoConnect: true,
     greeting: `Hi, I’m ${agent.name}, speaking as ${avatarName}. Try one of the quick tests above, or just talk to me.`,
     voicePrompts: scenarios.map((s) => s.prompt),
+    startSession: () => api.startAgentConversation(agent.id),
   })
   const busy = conv.phase === 'listening'
 
