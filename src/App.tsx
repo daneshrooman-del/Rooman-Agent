@@ -5,6 +5,7 @@ import { ToastProvider } from '@/components/ui/Toast'
 import { AppShell } from '@/components/layout/AppShell'
 
 /* Route-level code splitting: each experience loads on demand. */
+const LandingPage = lazy(() => import('@/pages/LandingPage'))
 const HomePage = lazy(() => import('@/pages/HomePage'))
 const AvatarsPage = lazy(() => import('@/pages/avatars/AvatarsPage'))
 const AvatarCreatePage = lazy(() => import('@/pages/avatars/AvatarCreatePage'))
@@ -18,13 +19,28 @@ const AgentDetailPage = lazy(() => import('@/pages/agents/AgentDetailPage'))
 const AssetsPage = lazy(() => import('@/pages/AssetsPage'))
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
+const SignInPage = lazy(() => import('@/pages/SignInPage'))
+const SignUpPage = lazy(() => import('@/pages/SignUpPage'))
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
 
 const router = createBrowserRouter([
   {
+    path: '/',
+    element: <LandingPage />,
+  },
+  {
+    path: '/signin',
+    element: <SignInPage />,
+  },
+  {
+    path: '/signup',
+    element: <SignUpPage />,
+  },
+  {
     element: <AppShell />,
     children: [
-      { index: true, element: <HomePage /> },
+      { path: 'workspace', element: <HomePage /> },
+      { path: 'home', element: <HomePage /> },
       { path: 'avatars', element: <AvatarsPage /> },
       { path: 'avatars/new', element: <AvatarCreatePage /> },
       { path: 'avatars/:avatarId', element: <AvatarDetailPage /> },

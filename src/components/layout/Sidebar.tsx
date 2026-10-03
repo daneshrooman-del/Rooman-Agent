@@ -47,7 +47,7 @@ export function Sidebar({ collapsed, onToggle, onHelp }: { collapsed: boolean; o
       )}
     >
       <div className={cn('flex items-center', collapsed ? 'justify-center' : 'justify-between pl-1.5')}>
-        <Link to="/" aria-label="Persona home" className="rounded-[10px]">
+        <Link to="/workspace" aria-label="Rooman Agent workspace" className="rounded-[10px]">
           <Logo collapsed={collapsed} />
         </Link>
         {!collapsed && (
