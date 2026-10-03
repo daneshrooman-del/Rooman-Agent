@@ -13,7 +13,7 @@ export interface NavItem {
 
 /** The identity flow: Avatar → Video → Live → Agents */
 export const primaryNav: NavItem[] = [
-  { to: '/', label: 'Home', icon: Home, end: true },
+  { to: '/workspace', label: 'Home', icon: Home, end: true },
   { to: '/avatars', label: 'My Avatars', short: 'Avatars', icon: UserRound, layer: 'Identity' },
   { to: '/create', label: 'Create Video', short: 'Create', icon: Clapperboard, layer: 'Content' },
   { to: '/live', label: 'Live AI', short: 'Live', icon: Radio, layer: 'Interaction' },

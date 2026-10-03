@@ -22,7 +22,7 @@ export function Logo({ collapsed }: { collapsed?: boolean }) {
   return (
     <span className="flex items-center gap-2.5">
       <LogoMark />
-      {!collapsed && <span className="font-display text-[17px] font-semibold tracking-tight">Persona</span>}
+      {!collapsed && <span className="font-display text-[17px] font-semibold tracking-tight">Rooman Agent</span>}
     </span>
   )
 }
