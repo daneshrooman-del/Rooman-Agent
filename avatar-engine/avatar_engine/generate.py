@@ -45,6 +45,7 @@ def render(
     action_type: str,
     *,
     language: str = "en",
+    voice: str | None = None,
     out_path: Path | None = None,
     on_progress: Callable[[int, str], None] | None = None,
 ) -> tuple[Path, dict]:
@@ -72,6 +73,7 @@ def render(
     try:
         # speech: user audio, or the script spoken in the twin's cloned voice
         stage(1)
+        voice_used = "user-audio"
         if is_audio_input(script_or_audio):
             speech = Path(script_or_audio)
         else:
@@ -81,12 +83,9 @@ def render(
             if len(text) > MAX_SCRIPT_CHARS:
                 raise ValueError(f"Script is {len(text)} characters — keep it under {MAX_SCRIPT_CHARS}.")
             speech = work / "speech.wav"
-            if not (d / "voice.pt").exists():  # face-only avatar: speak with the default stock voice
-                from .photo_twin import use_stock_voice
-
-                use_stock_voice(d / "voice.pt")
+            voice_file, voice_used = _resolve_voice(d, manifest, voice)
             with GPU_LOCK:
-                run_worker(settings.xtts_python, "xtts_worker.py", {"op": "speak", "text": text, "language": language, "voice": d / "voice.pt", "out": speech}, env=_xtts_env())
+                run_worker(settings.xtts_python, "xtts_worker.py", {"op": "speak", "text": text, "language": language, "voice": voice_file, "out": speech}, env=_xtts_env())
         drive = media.to_wav(speech, work / "drive_16k.wav", 16000)  # SadTalker's audio encoder expects 16 kHz
 
         # motion: animate the twin's prepared 3D face with the speech
@@ -126,7 +125,7 @@ def render(
         # identity check on every frame
         stage(3)
         report = check_video(work / "final.mp4", np.load(d / "identity.npy")).to_dict()
-        report.update(avatar_id=avatar_id, action=action.value, **extra)
+        report.update(avatar_id=avatar_id, action=action.value, voice=voice_used, **extra)
         if report["verdict"] == "rejected":
             quarantine = settings.outputs_dir / "rejected" / out.name
             quarantine.parent.mkdir(parents=True, exist_ok=True)
@@ -197,3 +196,27 @@ def _render_magichour(d: Path, speech: Path, work: Path, on_progress: Callable[[
     media.mux(work / "raw.mp4", speech, work / "final.mp4")
     return {"renderer": "magichour", "magichour_mode": mode, "magichour_video_id": job["id"],
             "credits_charged": v.get("credits_charged", job.get("credits_charged")), "credit_notes": notes}
+
+
+def _resolve_voice(d: Path, manifest: dict, voice: str | None) -> tuple[Path, str]:
+    """Which voice speaks the script:
+    1. the voice asked for (library id, e.g. "shalya")
+    2. the avatar's own cloned voice
+    3. a library voice matching the avatar's name
+    4. the default stock voice
+    """
+    from . import voices
+
+    if voice:
+        return voices.latents_path(voice), voice
+    own = d / "voice.pt"
+    if own.exists() and (manifest.get("voice") or {}).get("type") == "cloned":
+        return own, "cloned"
+    match = voices.match_for_name(manifest.get("name"))
+    if match:
+        return voices.latents_path(match), match
+    if not own.exists():
+        from .photo_twin import use_stock_voice
+
+        use_stock_voice(own)
+    return own, "stock"

@@ -129,6 +129,7 @@ def generate(
     avatar_id: str,
     action_type: str = Form("talk"),
     language: str = Form("en"),
+    voice: str | None = Form(None),
     script: str | None = Form(None),
     audio: UploadFile | None = File(None),
     wait: bool = False,
@@ -160,7 +161,7 @@ def generate(
 
     def run() -> Path:
         try:
-            path, report = render(avatar_id, source, action_type, language=language, on_progress=progress)
+            path, report = render(avatar_id, source, action_type, language=language, voice=voice or None, on_progress=progress)
             job.update(status="done", video=str(path), duration_sec=media.probe(path)["duration"], consistency=report, message="Done")
             return path
         except api.ConsistencyError as e:
@@ -183,6 +184,21 @@ def generate(
     except api.ConsistencyError as e:
         raise HTTPException(409, {"error": str(e), "consistency": e.report})
     return FileResponse(path, media_type="video/mp4", filename=path.name, headers={"X-Job-Id": job_id})
+
+
+@app.get("/voices")
+def voices() -> list[dict]:
+    """Voice library built from the XTTS_Final/ reference clips."""
+    return api.list_voices()
+
+
+@app.post("/voices/prepare", status_code=202)
+def prepare_voices() -> dict:
+    """Pre-compute latents for every library voice (one model load) so first use is instant."""
+    from .voices import prepare
+
+    _pool.submit(prepare)
+    return {"status": "preparing", "voices": [v["id"] for v in api.list_voices()]}
 
 
 @app.get("/jobs/{job_id}")

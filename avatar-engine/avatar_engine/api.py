@@ -24,6 +24,7 @@ __all__ = [
     "create_avatar_from_photos",
     "generate",
     "get_avatar",
+    "list_voices",
     "ActionType",
     "ActionNotSupported",
     "AvatarNotFound",
@@ -75,6 +76,7 @@ def generate(
     action_type: str | ActionType,
     *,
     language: str = "en",
+    voice: str | None = None,
     out_path: str | Path | None = None,
     on_progress: ProgressFn | None = None,
 ) -> Path:
@@ -87,10 +89,17 @@ def generate(
     A `<video>.consistency.json` identity report is written next to the video.
     Raises ConsistencyError if the identity drifted too far (the file is quarantined, not returned).
     """
-    path, _ = render(avatar_id, script_or_audio, action_type, language=language, out_path=Path(out_path) if out_path else None, on_progress=on_progress)
+    path, _ = render(avatar_id, script_or_audio, action_type, language=language, voice=voice, out_path=Path(out_path) if out_path else None, on_progress=on_progress)
     return path
 
 
 def get_avatar(avatar_id: str) -> dict:
     """Manifest for an avatar: status (training | ready | failed), stage, warnings, error."""
     return load_manifest(avatar_id)
+
+
+def list_voices() -> list[dict]:
+    """Voice library (XTTS_Final/): [{id, name, ready}]. Pass an id as generate(..., voice=id)."""
+    from .voices import list_voices as _list
+
+    return _list()

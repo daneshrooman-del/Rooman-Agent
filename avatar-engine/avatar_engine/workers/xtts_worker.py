@@ -32,6 +32,22 @@ def clone(req):
     return {"voice": req["out"], "device": device}
 
 
+def clone_many(req):
+    """Voice library: conditioning latents for many reference clips with a single model load."""
+    import torch
+
+    model, device = _model()
+    done, failed = [], {}
+    for item in req["items"]:
+        try:
+            gpt_latent, speaker_emb = model.get_conditioning_latents(audio_path=[item["wav"]])
+            torch.save({"gpt_cond_latent": gpt_latent.cpu(), "speaker_embedding": speaker_emb.cpu()}, item["out"])
+            done.append(item["id"])
+        except Exception as e:  # one bad clip must not stop the rest
+            failed[item["id"]] = f"{type(e).__name__}: {e}"
+    return {"done": done, "failed": failed, "device": device}
+
+
 def _stock_speakers():
     """The 58 studio voices ship as a small speakers_xtts.pth next to the model — reading it takes
     ~5 s instead of ~100 s for loading the full 1.8 GB model. Falls back to the model if missing."""
@@ -100,7 +116,7 @@ def speak(req):
 def main():
     req = json.loads(sys.stdin.read())
     try:
-        out = {"clone": clone, "speak": speak, "stock": stock}[req["op"]](req)
+        out = {"clone": clone, "clone_many": clone_many, "speak": speak, "stock": stock}[req["op"]](req)
     except Exception as e:
         traceback.print_exc()
         out = {"error": f"{type(e).__name__}: {e}"}

@@ -31,7 +31,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("script_or_audio")
     g.add_argument("action_type", nargs="?", default="talk")
     g.add_argument("--language", default="en")
+    g.add_argument("--voice", help="voice library id, e.g. shalya (see `avatar-engine voices`)")
     g.add_argument("--out")
+    v = sub.add_parser("voices", help="list (and --prepare) the XTTS_Final voice library")
+    v.add_argument("--prepare", action="store_true", help="pre-compute all voices now (one model load)")
     s = sub.add_parser("serve", help="run the HTTP API")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8100)
@@ -45,8 +48,14 @@ def main(argv: list[str] | None = None) -> int:
             avatar_id = api.create_avatar_from_photos(a.photos, voice_sample=a.voice, on_progress=_progress)
             print(json.dumps(api.get_avatar(avatar_id), indent=2))
         elif a.cmd == "generate":
-            path = api.generate(a.avatar_id, a.script_or_audio, a.action_type, language=a.language, out_path=a.out, on_progress=_progress)
+            path = api.generate(a.avatar_id, a.script_or_audio, a.action_type, language=a.language, voice=a.voice, out_path=a.out, on_progress=_progress)
             print(json.dumps({"video": str(path), "consistency": json.loads(path.with_suffix(".consistency.json").read_text())}, indent=2))
+        elif a.cmd == "voices":
+            if a.prepare:
+                from .voices import prepare
+
+                print(json.dumps(prepare(), indent=2))
+            print(json.dumps(api.list_voices(), indent=2))
         else:
             import uvicorn
 
