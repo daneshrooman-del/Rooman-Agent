@@ -13,7 +13,7 @@ export function ExitButton({ className, onExit }: { className?: string; onExit?:
       onClick={() => {
         onExit?.()
         if (key !== 'default') navigate(-1)
-        else navigate('/')
+        else navigate('/workspace')
       }}
       className={cn('glass-strong flex size-10 items-center justify-center rounded-full text-fg transition-colors hover:bg-white/10 lg:hidden', className)}
     >
