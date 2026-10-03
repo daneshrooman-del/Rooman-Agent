@@ -27,7 +27,7 @@ export function Topbar({ onSearch, onOpenDrawer }: { onSearch: () => void; onOpe
       <button type="button" onClick={onOpenDrawer} aria-label="Open navigation" className="-ml-1 flex size-10 items-center justify-center rounded-[10px] text-fg-muted hover:bg-white/[0.06] lg:hidden">
         <MenuIcon className="size-5" />
       </button>
-      <Link to="/" aria-label="Persona home" className="lg:hidden">
+      <Link to="/workspace" aria-label="Persona home" className="lg:hidden">
         <LogoMark className="size-7" />
       </Link>
 

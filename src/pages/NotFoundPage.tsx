@@ -12,7 +12,7 @@ export default function NotFoundPage() {
       description="The link may be outdated, or the item was removed."
       action={
         <>
-          <ButtonLink to="/" variant="primary">
+          <ButtonLink to="/workspace" variant="primary">
             Go home
           </ButtonLink>
           <ButtonLink to="/avatars">My Avatars</ButtonLink>
