@@ -35,3 +35,15 @@
 ## Files
 - new: `kaggle/musetalk_patches/preprocessing.py`
 - changed: `kaggle/musetalk_benchmark.ipynb`
+
+## Follow-up: second Kaggle run
+- The patch installed and was in place; models loaded (GPU memory peaked at 7.3 GiB before the
+  failure).
+- Failed in `torch.load`: PyTorch ≥ 2.6 defaults to `weights_only=True`, which rejects
+  legacy `.tar`-format checkpoints — face-parsing's `resnet18-5c106cde.pth` (2017).
+  Reproduced locally (torch 2.6) and confirmed `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` fixes it; no
+  MuseTalk call site passes `weights_only` explicitly, so the variable covers all of them.
+  The benchmark command now sets it, for that subprocess only. Acceptable because the files are
+  the official weights from pytorch.org and MuseTalk's Hugging Face repo.
+- "no file named diffusion_pytorch_model.safetensors … defaulting to unsafe serialization" is a
+  warning only: diffusers falls back to the downloaded `.bin`.
