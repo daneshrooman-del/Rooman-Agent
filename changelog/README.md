@@ -17,3 +17,4 @@ which files were touched, and how it was verified.
 | 010 | [Kaggle GPU worker notebook](010-kaggle-gpu-worker.md) | Kaggle |
 | 011 | [Kaggle first-run fixes](011-kaggle-first-run-fixes.md) | Kaggle |
 | 012 | [First working turn on Kaggle](012-kaggle-working-turn.md) | Kaggle |
+| 013 | [MuseTalk benchmark notebook](013-musetalk-benchmark-notebook.md) | 5a |

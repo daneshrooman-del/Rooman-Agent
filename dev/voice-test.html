@@ -66,12 +66,13 @@ $('start').onclick = async () => {
       for (const seg of segs) {
         let el = segments.get(seg.id);
         if (!el) { el = line(isAgent ? 'agent' : 'user', ''); segments.set(seg.id, el); }
-        el.textContent = (isAgent ? 'agent: ' : 'you: ') + seg.text;
         if (!isAgent && seg.final) t0.userFinal = performance.now();
-        if (isAgent && t0.userFinal) {
-          el.textContent += `  (+${((performance.now() - t0.userFinal) / 1000).toFixed(1)}s after your final transcript)`;
+        if (isAgent && t0.userFinal && !el.dataset.latency) {
+          // First text of this reply: remember the delay; later updates of the same segment keep it.
+          el.dataset.latency = `  (+${((performance.now() - t0.userFinal) / 1000).toFixed(1)}s after your message)`;
           t0.userFinal = 0;
         }
+        el.textContent = (isAgent ? 'agent: ' : 'you: ') + seg.text + (el.dataset.latency || '');
       }
     });
     room.on(LK.RoomEvent.Disconnected, () => { status('disconnected'); $('stop').disabled = true; $('start').disabled = false; });
