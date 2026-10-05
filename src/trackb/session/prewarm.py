@@ -63,6 +63,11 @@ def load_models(settings: Settings) -> WarmModels:
 
     models.vad_session = get_vad_model().session
 
+    if settings.llm_provider == "gemini":
+        # The google-genai SDK takes ~2.7 s to import (measured on Kaggle); done lazily it blocks
+        # the event loop during the first turn of the first session.
+        import trackb.llm.gemini  # noqa: F401
+
     logger.info("models_prewarmed", seconds=round(time.perf_counter() - started, 2))
     return models
 
