@@ -23,7 +23,8 @@ subs = [
     (
         "            self.idx = self.idx + 1\n",
         "            self.idx = self.idx + 1\n"
-        "            self.blend_seconds = getattr(self, 'blend_seconds', 0.0) + time.time() - _t_blend\n",
+        # blend_seconds is reset before the GPU loop puts the first frame, so it exists here.
+        "            self.blend_seconds += time.time() - _t_blend\n",
     ),
     # GPU stage: per batch, from feature projection to decoded frames (decode returns numpy,
     # so it's already synchronised; synchronize() makes that explicit).
