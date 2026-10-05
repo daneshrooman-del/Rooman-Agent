@@ -18,3 +18,4 @@ which files were touched, and how it was verified.
 | 011 | [Kaggle first-run fixes](011-kaggle-first-run-fixes.md) | Kaggle |
 | 012 | [First working turn on Kaggle](012-kaggle-working-turn.md) | Kaggle |
 | 013 | [MuseTalk benchmark notebook](013-musetalk-benchmark-notebook.md) | 5a |
+| 014 | [MuseTalk without OpenMMLab](014-musetalk-without-openmmlab.md) | 5a |
