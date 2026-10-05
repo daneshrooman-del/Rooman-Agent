@@ -31,6 +31,8 @@ logger = structlog.get_logger(__name__)
 
 _SPEAK_PIPELINE_DEPTH = 2
 
+TURN_FAILED_MESSAGE = "Sorry, I had trouble with that. Could you say it again?"
+
 
 async def _single(text: str) -> AsyncIterator[str]:
     yield text
@@ -137,9 +139,31 @@ class SessionWorker:
         utterance = TranscribedUtterance(
             session_id=self._session_id, text=text, is_final=True
         )
+        await self._dispatch(utterance)
+
+    async def _dispatch(self, utterance: TranscribedUtterance) -> None:
+        """Run the registered handler for one utterance, keeping the session alive if it fails.
+
+        A turn handler error (LLM timeout or 429, a bad structured reply, a TTS failure) used to
+        escape: for spoken input it killed the transcript pump and so the whole session, and for
+        typed input it vanished as an un-retrieved task exception with no reply. Now it's logged
+        with its traceback and the caller hears a short apology, so they know to try again.
+        """
         handler = self._on_utterance
-        if handler is not None:
+        if handler is None:
+            return
+        try:
             await handler(utterance)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("session_turn_failed", session_id=self._session_id)
+            if self._tts is None:
+                return
+            try:
+                await self.speak(TURN_FAILED_MESSAGE)
+            except Exception:
+                logger.exception("session_turn_failed_apology_failed", session_id=self._session_id)
 
     def _on_pump_task_done(self, task: asyncio.Task[None]) -> None:
         """A pump task normally only ends via `leave()` cancelling it. If one instead ends on
@@ -176,9 +200,7 @@ class SessionWorker:
                     text=event.text,
                     is_final=event.is_final,
                 )
-                handler = self._on_utterance
-                if handler is not None:
-                    await handler(utterance)
+                await self._dispatch(utterance)
                 await self._publish_caller_transcription(utterance)
         except asyncio.CancelledError:
             raise

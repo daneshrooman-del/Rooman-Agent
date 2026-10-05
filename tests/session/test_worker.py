@@ -545,3 +545,37 @@ async def test_speak_splits_multi_sentence_text_into_pipelined_clips() -> None:
     assert room.published_transcriptions[-1]["text"] == (
         "Thanks for that detail. What should the agent do first?"
     )
+
+
+@pytest.mark.asyncio
+async def test_failing_turn_handler_apologises_and_keeps_the_session_alive() -> None:
+    room = _FakeRoomClient(frames=[])
+    stt = _FakeSTT()
+
+    async def fake_tts(text: str) -> bytes:
+        return text.encode()
+
+    worker = SessionWorker(session_id="s-fail", room_client=room, stt=stt, tts=fake_tts)
+    calls: list[str] = []
+
+    async def flaky_handler(utterance: TranscribedUtterance) -> None:
+        calls.append(utterance.text)
+        if len(calls) == 1:
+            raise RuntimeError("Gemini 429")
+
+    worker.on_utterance(flaky_handler)
+    await worker.join(url="ws://livekit.local", token="tok")
+
+    assert room.text_handler is not None
+    await room.text_handler("typed turn that fails")  # must not raise
+    await stt.emit(TranscriptEvent(text="spoken turn after the failure", is_final=True))
+    await asyncio.sleep(0.2)
+
+    assert calls == ["typed turn that fails", "spoken turn after the failure"]
+    from trackb.session.worker import TURN_FAILED_MESSAGE
+
+    assert b" ".join(room.published) == TURN_FAILED_MESSAGE.encode()  # spoken per sentence
+    assert worker._transcript_pump_task is not None
+    assert not worker._transcript_pump_task.done()  # pump survived
+
+    await worker.leave()

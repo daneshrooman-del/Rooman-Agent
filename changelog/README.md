@@ -15,3 +15,4 @@ which files were touched, and how it was verified.
 | 008 | [Endpointing, pipelined speech, warm shared models](008-latency-endpointing-prewarm-threads.md) | 3, 5 |
 | 009 | [LiveKit Cloud transport](009-livekit-cloud.md) | Transport |
 | 010 | [Kaggle GPU worker notebook](010-kaggle-gpu-worker.md) | Kaggle |
+| 011 | [Kaggle first-run fixes](011-kaggle-first-run-fixes.md) | Kaggle |
