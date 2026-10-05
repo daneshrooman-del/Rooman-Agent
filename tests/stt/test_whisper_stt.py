@@ -228,3 +228,24 @@ async def test_vad_filter_is_passed_through_to_the_model() -> None:
     await stt.push_audio(_pcm16_silence(1.5))
 
     assert model.call_kwargs == [{"language": None, "vad_filter": False}]
+
+
+def test_language_falls_back_to_settings_and_explicit_argument_wins() -> None:
+    settings = Settings(whisper_language="en")
+
+    assert WhisperSTT(settings=settings, model=object())._language == "en"  # type: ignore[arg-type]
+    assert WhisperSTT(settings=settings, model=object(), language="de")._language == "de"  # type: ignore[arg-type]
+    assert WhisperSTT(settings=Settings(), model=object())._language is None  # type: ignore[arg-type]
+
+
+def test_device_and_compute_type_come_from_settings_unless_overridden() -> None:
+    gpu = Settings(whisper_device="cuda", whisper_compute_type="float16")
+
+    stt = WhisperSTT(settings=gpu, model=object())  # type: ignore[arg-type]
+    assert (stt._device, stt._compute_type) == ("cuda", "float16")
+
+    cpu = WhisperSTT(settings=Settings(), model=object())  # type: ignore[arg-type]
+    assert (cpu._device, cpu._compute_type) == ("cpu", "int8")
+
+    explicit = WhisperSTT(settings=gpu, model=object(), device="cpu", compute_type="int8")  # type: ignore[arg-type]
+    assert explicit._device == "cpu"

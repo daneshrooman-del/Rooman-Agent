@@ -1,0 +1,110 @@
+<!doctype html>
+<!-- Dev-only page for testing the voice loop against the local stack. Not part of the app build.
+     Serve:  python -m http.server 8765 -d dev   then open http://localhost:8765/voice-test.html -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Loop Test</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#666; --line:#ddd; --agent:#eef4ff; --user:#f3f3f3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#999; --line:#333; --agent:#1a2433; --user:#222; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,sans-serif; max-width:720px; margin:0 auto; padding:16px; }
+  button,input { font:inherit; padding:8px 12px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+  #status { color:var(--muted); }
+  #log { border:1px solid var(--line); border-radius:8px; padding:8px; min-height:240px; }
+  .msg { padding:6px 10px; border-radius:6px; margin:4px 0; }
+  .agent { background:var(--agent); } .user { background:var(--user); } .sys { color:var(--muted); font-size:13px; }
+  #text { flex:1; min-width:0; }
+</style>
+</head>
+<body>
+<h1>Voice loop test</h1>
+<div class="row">
+  <label>API <input id="api" value="http://localhost:8000"></label>
+  <button id="start">Start intake session</button>
+  <button id="stop" disabled>Leave</button>
+</div>
+<div class="row"><span id="status">idle</span></div>
+<div id="log"></div>
+<form class="row" id="form"><input id="text" placeholder="…or type a message" disabled><button disabled id="send">Send</button></form>
+<div id="audio"></div>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<script>
+const LK = window.LivekitClient;
+const $ = (id) => document.getElementById(id);
+let room = null;
+const t0 = { userFinal: 0 };
+
+function line(cls, text) {
+  const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text;
+  $('log').appendChild(d); d.scrollIntoView({ block: 'end' }); return d;
+}
+const status = (s) => { $('status').textContent = s; };
+const segments = new Map();
+
+$('start').onclick = async () => {
+  $('start').disabled = true; status('requesting session…');
+  try {
+    const res = await fetch($('api').value + '/intake/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner: 'dev-tester' }),
+    });
+    if (!res.ok) throw new Error(res.status + ' ' + await res.text());
+    const s = await res.json();
+    line('sys', `session ${s.session_id} · room ${s.room_name}`);
+
+    room = new LK.Room({ adaptiveStream: true });
+    room.on(LK.RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === 'audio') { $('audio').appendChild(track.attach()); line('sys', 'agent audio track subscribed'); }
+    });
+    room.on(LK.RoomEvent.ParticipantConnected, (p) => line('sys', `joined: ${p.identity}`));
+    room.on(LK.RoomEvent.ParticipantDisconnected, (p) => line('sys', `left: ${p.identity}`));
+    room.on(LK.RoomEvent.TranscriptionReceived, (segs, participant) => {
+      const isAgent = participant && participant.identity !== room.localParticipant.identity;
+      for (const seg of segs) {
+        let el = segments.get(seg.id);
+        if (!el) { el = line(isAgent ? 'agent' : 'user', ''); segments.set(seg.id, el); }
+        el.textContent = (isAgent ? 'agent: ' : 'you: ') + seg.text;
+        if (!isAgent && seg.final) t0.userFinal = performance.now();
+        if (isAgent && t0.userFinal) {
+          el.textContent += `  (+${((performance.now() - t0.userFinal) / 1000).toFixed(1)}s after your final transcript)`;
+          t0.userFinal = 0;
+        }
+      }
+    });
+    room.on(LK.RoomEvent.Disconnected, () => { status('disconnected'); $('stop').disabled = true; $('start').disabled = false; });
+
+    status('connecting…');
+    await room.connect(s.livekit_url, s.token);
+    $('stop').disabled = false; $('text').disabled = false; $('send').disabled = false;
+    try {
+      await room.localParticipant.setMicrophoneEnabled(true);
+      status('connected — speak (the agent joins within a few seconds)');
+    } catch (micErr) {
+      // Stay connected: typed messages drive the same conversation.
+      status(`connected, but no microphone (${micErr.name}: ${micErr.message}) — you can still type`);
+      await listInputs();
+    }
+  } catch (e) {
+    status('error: ' + e.message); $('start').disabled = false;
+  }
+};
+async function listInputs() {
+  try {
+    const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput');
+    line('sys', inputs.length
+      ? 'browser sees inputs: ' + inputs.map((d) => d.label || '(unnamed — permission not granted yet)').join(', ')
+      : 'browser sees NO audio input devices (check the mic is plugged in / enabled, and the browser has OS audio access)');
+  } catch (e) { line('sys', 'could not list devices: ' + e.message); }
+}
+$('stop').onclick = () => room && room.disconnect();
+$('form').onsubmit = async (e) => {
+  e.preventDefault(); const text = $('text').value.trim(); if (!text || !room) return;
+  await room.localParticipant.sendText(text, { topic: 'lk-chat-topic' });
+  line('user', 'you (typed): ' + text); $('text').value = ''; t0.userFinal = performance.now();
+};
+</script>
+</body>
+</html>

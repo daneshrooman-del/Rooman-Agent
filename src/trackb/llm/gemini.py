@@ -13,6 +13,7 @@ its shape -- both are handled). `response.text` gives the raw text for a plain c
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from typing import TypeVar
 
 import structlog
@@ -27,6 +28,7 @@ SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 DEFAULT_MODEL = "gemini-flash-latest"
 REQUEST_TIMEOUT_SECONDS = 20.0
+STREAM_CHUNK_TIMEOUT_SECONDS = 10.0
 
 _RETRY = retry(
     stop=stop_after_attempt(3),
@@ -56,6 +58,57 @@ class GeminiLLMProvider:
     async def complete(self, prompt: str, system: str | None = None) -> str:
         response = await self._generate(prompt, system=system)
         return response.text or ""
+
+    async def stream(self, prompt: str, system: str | None = None) -> AsyncIterator[str]:
+        """Yield text deltas as Gemini generates them.
+
+        Only the connection / first chunk is retried (`_open_stream`): once text has been
+        yielded the caller may already be speaking it, so a mid-stream failure is raised, not
+        silently restarted. `STREAM_CHUNK_TIMEOUT_SECONDS` bounds the wait for each chunk.
+        """
+        stream = await self._open_stream(prompt, system)
+        iterator = stream.__aiter__()
+        try:
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(
+                        iterator.__anext__(), timeout=STREAM_CHUNK_TIMEOUT_SECONDS
+                    )
+                except StopAsyncIteration:
+                    return
+                except asyncio.TimeoutError as exc:
+                    raise GeminiRequestError(
+                        f"Gemini stream stalled for {STREAM_CHUNK_TIMEOUT_SECONDS}s"
+                    ) from exc
+                except GeminiRequestError:
+                    raise
+                except Exception as exc:
+                    raise GeminiRequestError(f"Gemini stream failed: {exc}") from exc
+                if chunk.text:
+                    yield chunk.text
+        finally:
+            aclose = getattr(iterator, "aclose", None)
+            if aclose is not None:
+                await aclose()
+
+    @_RETRY
+    async def _open_stream(
+        self, prompt: str, system: str | None
+    ) -> AsyncIterator[types.GenerateContentResponse]:
+        config = types.GenerateContentConfig(system_instruction=system)
+        try:
+            return await asyncio.wait_for(
+                self._client.aio.models.generate_content_stream(
+                    model=self._model, contents=prompt, config=config
+                ),
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise GeminiRequestError(
+                f"Gemini stream timed out opening after {REQUEST_TIMEOUT_SECONDS}s"
+            ) from exc
+        except Exception as exc:
+            raise GeminiRequestError(f"Gemini stream failed to open: {exc}") from exc
 
     async def extract(
         self, prompt: str, schema: type[SchemaT], system: str | None = None

@@ -5,7 +5,8 @@ Real backends (whichever gets chosen outside this track) implement the same
 LLMProvider needs to change.
 """
 
-from collections.abc import Callable
+import re
+from collections.abc import AsyncIterator, Callable
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -26,6 +27,11 @@ class MockLLMProvider:
 
     async def complete(self, prompt: str, system: str | None = None) -> str:
         return self._complete_fn(prompt)
+
+    async def stream(self, prompt: str, system: str | None = None) -> AsyncIterator[str]:
+        """Yield the canned completion a word at a time (whitespace preserved)."""
+        for piece in re.findall(r"\S+\s*", self._complete_fn(prompt)):
+            yield piece
 
     async def extract(
         self, prompt: str, schema: type[SchemaT], system: str | None = None

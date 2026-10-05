@@ -5,7 +5,8 @@ this codebase may import a specific vendor SDK directly -- everything goes throu
 LLMProvider so swapping the backend later is a config change, not a rewrite.
 """
 
-from typing import Protocol, TypeVar
+from collections.abc import AsyncIterator
+from typing import Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -21,4 +22,18 @@ class LLMProvider(Protocol):
         self, prompt: str, schema: type[SchemaT], system: str | None = None
     ) -> SchemaT:
         """Structured extraction: the response is validated against `schema` before returning."""
+        ...
+
+
+@runtime_checkable
+class StreamingLLMProvider(LLMProvider, Protocol):
+    """An `LLMProvider` that can also yield a free-form reply incrementally.
+
+    Kept as a separate protocol so existing providers and fakes that only implement
+    `complete`/`extract` stay valid. Structured `extract()` calls (intake, flow engine) are not
+    streamed -- a partial JSON object is not speakable.
+    """
+
+    def stream(self, prompt: str, system: str | None = None) -> AsyncIterator[str]:
+        """Yield text deltas as the model produces them."""
         ...

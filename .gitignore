@@ -37,3 +37,7 @@ dist-ssr
 
 # Env
 .env
+
+# Downloaded model weights (Piper voices etc.)
+models/
+.logs/

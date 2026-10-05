@@ -1,0 +1,11 @@
+# Local LiveKit server for development:  docker compose -f infra/livekit/docker-compose.yml up -d
+# Host networking is the reliable way to run WebRTC in Docker on Linux (no port-mapping/NAT
+# surprises); it exposes 7880 (signaling), 7881/tcp and 7882/udp (media) on this machine.
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro

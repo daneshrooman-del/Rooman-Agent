@@ -29,19 +29,25 @@ import uuid
 from collections.abc import Callable
 
 import structlog
-from livekit.agents import JobContext, WorkerOptions, cli
+from livekit.agents import JobContext, JobExecutorType, WorkerOptions, cli
 
 from trackb.config import Settings, get_settings
 from trackb.contracts.models import AgentSpec
 from trackb.llm.factory import build_llm_provider
 from trackb.provisioning.store import get_agent_spec
+from trackb.session import cpu_compat
 from trackb.session.concurrency import SessionConcurrencyGuard
-from trackb.session.entrypoint import UtteranceEmittingWorker, _build_tts_provider, _make_tts_fn
+from trackb.session.entrypoint import (
+    UtteranceEmittingWorker,
+    _build_stt,
+    _build_tts_provider,
+    _make_tts_fn,
+)
 from trackb.session.flow_engine import FlowGraphDriver, FlowStepResult
 from trackb.session.livekit_admin import session_id_from_conversation_room_name
+from trackb.session.prewarm import prewarm, warm_models
 from trackb.session.room_client import LiveKitRoomClient
 from trackb.session.worker import SessionWorker, TranscribedUtterance
-from trackb.stt.whisper_stt import WhisperSTT
 
 logger = structlog.get_logger(__name__)
 
@@ -185,9 +191,10 @@ async def conversation_entrypoint(ctx: JobContext) -> None:
     room_client = LiveKitRoomClient(
         ctx.room, participant_wait_timeout_seconds=settings.participant_wait_timeout_seconds
     )
-    stt = WhisperSTT(settings=settings)
+    models = warm_models(ctx)
+    stt = _build_stt(settings, models)
     guard = SessionConcurrencyGuard(settings=settings)
-    tts_provider = _build_tts_provider(settings)
+    tts_provider = _build_tts_provider(settings, models)
     session_worker = SessionWorker(
         session_id=session_id,
         room_client=room_client,
@@ -227,6 +234,10 @@ def _worker_options(settings: Settings | None = None) -> WorkerOptions:
     settings = settings or get_settings()
     return WorkerOptions(
         entrypoint_fnc=conversation_entrypoint,
+        prewarm_fnc=prewarm,
+        job_executor_type=JobExecutorType(settings.worker_job_executor),
+        num_idle_processes=settings.worker_idle_processes,
+        initialize_process_timeout=settings.worker_init_timeout_seconds,
         agent_name="trackb-conversation",
         ws_url=settings.livekit_url,
         api_key=settings.livekit_api_key,
@@ -239,6 +250,7 @@ WORKER_OPTIONS = _worker_options()
 
 def run_worker() -> None:
     """Start this module as a LiveKit Agents worker process."""
+    cpu_compat.register()
     cli.run_app(WORKER_OPTIONS)
 
 

@@ -27,3 +27,11 @@ def test_gemini_without_api_key_raises_a_clear_error() -> None:
 
     with pytest.raises(ValueError, match="TRACKB_GEMINI_API_KEY"):
         build_llm_provider(settings)
+
+
+def test_builds_ollama_provider_when_configured() -> None:
+    from trackb.llm.ollama import OllamaLLMProvider
+
+    settings = Settings(llm_provider="ollama", ollama_model="qwen2.5:3b")
+
+    assert isinstance(build_llm_provider(settings), OllamaLLMProvider)

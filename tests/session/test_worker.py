@@ -295,8 +295,9 @@ async def test_speak_publishes_agent_transcription_with_local_identity() -> None
     await worker.speak("hello there")
 
     assert room.published == [b"AUDIO:hello there"]
-    assert len(room.published_transcriptions) == 1
-    entry = room.published_transcriptions[0]
+    interim, entry = room.published_transcriptions  # grows per sentence, then final
+    assert interim["final"] is False
+    assert interim["segment_id"] == entry["segment_id"]
     assert entry["participant_identity"] == "agent-local"
     assert entry["track_sid"] == "TR_local_0"
     assert entry["text"] == "hello there"
@@ -409,3 +410,138 @@ async def test_typed_text_is_not_echoed_back_as_a_transcription() -> None:
     assert room.published_transcriptions == []
 
     await worker.leave()
+
+
+async def _sentences(*items: str) -> AsyncIterator[str]:
+    for item in items:
+        yield item
+
+
+@pytest.mark.asyncio
+async def test_speak_stream_publishes_each_sentence_in_order_with_transcripts() -> None:
+    room = _FakeRoomClient(frames=[])
+
+    async def fake_tts(text: str) -> bytes:
+        return f"A:{text}".encode()
+
+    worker = SessionWorker(session_id="s-st1", room_client=room, stt=_FakeSTT(), tts=fake_tts)
+
+    await worker.speak_stream(_sentences("One.", "Two.", "Three."))
+
+    assert room.published == [b"A:One.", b"A:Two.", b"A:Three."]
+    # One transcript line per reply, growing as each sentence's audio goes out, then final.
+    segments = room.published_transcriptions
+    assert [(t["text"], t["final"]) for t in segments] == [
+        ("One.", False),
+        ("One. Two.", False),
+        ("One. Two. Three.", False),
+        ("One. Two. Three.", True),
+    ]
+    assert len({t["segment_id"] for t in segments}) == 1
+
+
+@pytest.mark.asyncio
+async def test_speak_stream_synthesizes_next_sentence_while_publishing_current() -> None:
+    room = _FakeRoomClient(frames=[])
+    events: list[str] = []
+    publish_gate = asyncio.Event()
+
+    async def fake_tts(text: str) -> bytes:
+        events.append(f"tts:{text}")
+        return text.encode()
+
+    original = room.publish_audio
+
+    async def slow_publish(audio: bytes) -> None:
+        events.append(f"pub-start:{audio.decode()}")
+        if audio == b"A":
+            await publish_gate.wait()
+        await original(audio)
+
+    room.publish_audio = slow_publish  # type: ignore[method-assign]
+    worker = SessionWorker(session_id="s-st2", room_client=room, stt=_FakeSTT(), tts=fake_tts)
+
+    task = asyncio.create_task(worker.speak_stream(_sentences("A", "B")))
+    for _ in range(20):
+        await asyncio.sleep(0)
+    # B is synthesized while A's publish is still blocked (relative order of the two is free)
+    assert events[0] == "tts:A"
+    assert set(events) == {"tts:A", "pub-start:A", "tts:B"}
+    assert room.published == []
+    publish_gate.set()
+    await task
+
+    assert room.published == [b"A", b"B"]
+
+
+@pytest.mark.asyncio
+async def test_speak_stream_cancellation_stops_producer_and_closes_source() -> None:
+    room = _FakeRoomClient(frames=[])
+    closed = asyncio.Event()
+
+    async def endless() -> AsyncIterator[str]:
+        try:
+            i = 0
+            while True:
+                yield f"s{i}"
+                i += 1
+                await asyncio.sleep(0)
+        finally:
+            closed.set()
+
+    async def fake_tts(text: str) -> bytes:
+        return text.encode()
+
+    async def blocked_publish(audio: bytes) -> None:
+        await asyncio.Event().wait()
+
+    room.publish_audio = blocked_publish  # type: ignore[method-assign]
+    worker = SessionWorker(session_id="s-st3", room_client=room, stt=_FakeSTT(), tts=fake_tts)
+
+    task = asyncio.create_task(worker.speak_stream(endless()))
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert closed.is_set()
+
+
+@pytest.mark.asyncio
+async def test_speak_stream_propagates_tts_failure() -> None:
+    room = _FakeRoomClient(frames=[])
+
+    async def bad_tts(text: str) -> bytes:
+        raise RuntimeError("synth down")
+
+    worker = SessionWorker(session_id="s-st4", room_client=room, stt=_FakeSTT(), tts=bad_tts)
+
+    with pytest.raises(RuntimeError, match="synth down"):
+        await worker.speak_stream(_sentences("hello there"))
+    assert room.published == []
+
+
+@pytest.mark.asyncio
+async def test_speak_stream_without_tts_raises() -> None:
+    worker = SessionWorker(
+        session_id="s-st5", room_client=_FakeRoomClient(frames=[]), stt=_FakeSTT()
+    )
+    with pytest.raises(NotImplementedError, match="tts"):
+        await worker.speak_stream(_sentences("x"))
+
+
+@pytest.mark.asyncio
+async def test_speak_splits_multi_sentence_text_into_pipelined_clips() -> None:
+    room = _FakeRoomClient(frames=[])
+
+    async def fake_tts(text: str) -> bytes:
+        return text.encode()
+
+    worker = SessionWorker(session_id="s-sp", room_client=room, stt=_FakeSTT(), tts=fake_tts)
+
+    await worker.speak("Thanks for that detail. What should the agent do first?")
+
+    assert room.published == [b"Thanks for that detail.", b"What should the agent do first?"]
+    assert room.published_transcriptions[-1]["text"] == (
+        "Thanks for that detail. What should the agent do first?"
+    )

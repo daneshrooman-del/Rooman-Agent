@@ -88,8 +88,8 @@ class WhisperSTT:
         *,
         settings: Settings | None = None,
         model: WhisperModelProtocol | None = None,
-        device: str = "cpu",
-        compute_type: str = "int8",
+        device: str | None = None,
+        compute_type: str | None = None,
         sample_rate: int = DEFAULT_SAMPLE_RATE,
         chunk_seconds: float = 2.0,
         transcribe_timeout_seconds: float = 10.0,
@@ -99,13 +99,13 @@ class WhisperSTT:
     ) -> None:
         settings = settings or get_settings()
         self._model_size = settings.whisper_model_size
-        self._device = device
-        self._compute_type = compute_type
+        self._device = device or settings.whisper_device
+        self._compute_type = compute_type or settings.whisper_compute_type
         self._sample_rate = sample_rate
         self._chunk_bytes = max(1, int(chunk_seconds * sample_rate * 2))  # 2 bytes/sample (PCM16)
         self._transcribe_timeout_seconds = transcribe_timeout_seconds
         self._max_attempts = max_attempts
-        self._language = language
+        self._language = language if language is not None else settings.whisper_language
         self._vad_filter = vad_filter
 
         self._model = model

@@ -34,7 +34,7 @@ from collections.abc import Awaitable, Callable
 from typing import Protocol, runtime_checkable
 
 import structlog
-from livekit.agents import JobContext, WorkerOptions, cli
+from livekit.agents import JobContext, JobExecutorType, WorkerOptions, cli
 
 from trackb.config import Settings, get_settings
 from trackb.contracts.models import AgentSpec
@@ -44,11 +44,19 @@ from trackb.llm.base import LLMProvider
 from trackb.llm.factory import build_llm_provider
 from trackb.provisioning.interfaces import AvatarAssignment, IntakeSessionResult
 from trackb.provisioning.orchestrator import run_intake_session
+from trackb.session import cpu_compat
 from trackb.session.concurrency import SessionConcurrencyGuard
 from trackb.session.livekit_admin import session_id_from_room_name
+from trackb.session.prewarm import WarmModels, prewarm, warm_models
 from trackb.session.redis_store import RedisSessionStore
 from trackb.session.room_client import LiveKitRoomClient
-from trackb.session.worker import SessionWorker, TextToSpeechFn, TranscribedUtterance
+from trackb.session.worker import (
+    SessionWorker,
+    SpeechToText,
+    TextToSpeechFn,
+    TranscribedUtterance,
+)
+from trackb.stt.endpointing import build_endpointed_stt
 from trackb.stt.whisper_stt import WhisperSTT
 from trackb.tts.base import TTSProvider
 from trackb.tts.mock import MockTTSProvider
@@ -76,7 +84,7 @@ avatar_id/voice_id pair) doesn't exist yet -- see `AvatarAssignment`'s own docst
 """
 
 
-def _build_tts_provider(settings: Settings) -> TTSProvider:
+def _build_tts_provider(settings: Settings, models: WarmModels | None = None) -> TTSProvider:
     """`PiperTTSProvider` if a real voice model is configured, `MockTTSProvider` otherwise.
 
     Mirrors `build_llm_provider`'s config-driven backend selection for `IntakeGraph`: the
@@ -84,9 +92,23 @@ def _build_tts_provider(settings: Settings) -> TTSProvider:
     this module hardcodes.
     """
     if settings.tts_voice_model_path:
-        return PiperTTSProvider(settings=settings)
+        voice = models.piper_voice if models is not None else None
+        return PiperTTSProvider(settings=settings, voice=voice)
     logger.warning("tts_voice_model_not_configured", fallback="MockTTSProvider")
     return MockTTSProvider()
+
+
+def _build_stt(settings: Settings, models: WarmModels | None = None) -> SpeechToText:
+    """VAD-endpointed STT by default; the original 2 s chunk mode if
+    `Settings.stt_turn_detection == "chunk"`. Mirrors `_build_tts_provider`. Uses prewarmed
+    models when given (see `trackb.session.prewarm`), else loads lazily."""
+    models = models or WarmModels()
+    whisper = WhisperSTT(settings=settings, model=models.whisper)
+    if settings.stt_turn_detection == "chunk":
+        return whisper
+    return build_endpointed_stt(
+        whisper, min_silence_ms=settings.stt_min_silence_ms, vad_session=models.vad_session
+    )
 
 
 def _make_tts_fn(provider: TTSProvider, voice_id: str | None) -> TextToSpeechFn:
@@ -333,9 +355,10 @@ async def intake_entrypoint(ctx: JobContext) -> None:
     room_client = LiveKitRoomClient(
         ctx.room, participant_wait_timeout_seconds=settings.participant_wait_timeout_seconds
     )
-    stt = WhisperSTT(settings=settings)
+    models = warm_models(ctx)
+    stt = _build_stt(settings, models)
     guard = SessionConcurrencyGuard(settings=settings)
-    tts_provider = _build_tts_provider(settings)
+    tts_provider = _build_tts_provider(settings, models)
     session_worker = SessionWorker(
         session_id=session_id,
         room_client=room_client,
@@ -376,6 +399,10 @@ def _worker_options(settings: Settings | None = None) -> WorkerOptions:
     settings = settings or get_settings()
     return WorkerOptions(
         entrypoint_fnc=intake_entrypoint,
+        prewarm_fnc=prewarm,
+        job_executor_type=JobExecutorType(settings.worker_job_executor),
+        num_idle_processes=settings.worker_idle_processes,
+        initialize_process_timeout=settings.worker_init_timeout_seconds,
         agent_name="trackb-intake",
         ws_url=settings.livekit_url,
         api_key=settings.livekit_api_key,
@@ -388,6 +415,7 @@ WORKER_OPTIONS = _worker_options()
 
 def run_worker() -> None:
     """Start this module as a LiveKit Agents worker process."""
+    cpu_compat.register()
     cli.run_app(WORKER_OPTIONS)
 
 

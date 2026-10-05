@@ -24,9 +24,16 @@ import structlog
 from trackb.config import Settings, get_settings
 from trackb.session.concurrency import SessionConcurrencyGuard
 from trackb.session.room_client import RoomClient
+from trackb.streaming import sentence_chunks
 from trackb.stt.whisper_stt import TranscriptEvent
 
 logger = structlog.get_logger(__name__)
+
+_SPEAK_PIPELINE_DEPTH = 2
+
+
+async def _single(text: str) -> AsyncIterator[str]:
+    yield text
 
 
 @runtime_checkable
@@ -202,12 +209,14 @@ class SessionWorker:
             final=utterance.is_final,
         )
 
-    async def _publish_agent_transcription(self, text: str) -> None:
+    async def _publish_agent_transcription(
+        self, text: str, *, segment_id: str | None = None, final: bool = True
+    ) -> None:
         """Publish the agent's own spoken line as a room transcription, addressed to the local
-        participant/track. Always `final=True` -- unlike STT output, the agent's lines aren't
-        interim. Skipped (with a log line), not raised, if the local track isn't published yet
-        (shouldn't happen in practice: `say_audio()` calls `publish_audio()`, which publishes the
-        track, before this runs)."""
+        participant/track. `final=True` unless `speak_stream` is still growing the reply's
+        segment sentence by sentence (same `segment_id`, interim until the reply ends).
+        Skipped (with a log line), not raised, if the local track isn't published yet
+        (shouldn't happen in practice: audio is always published before its transcript)."""
         identity = getattr(self._room_client, "local_identity", None)
         track_sid = getattr(self._room_client, "local_track_sid", None)
         if not identity or not track_sid:
@@ -220,11 +229,18 @@ class SessionWorker:
             participant_identity=identity,
             track_sid=track_sid,
             text=text,
-            final=True,
+            final=final,
+            segment_id=segment_id,
         )
 
     async def _publish_transcription_safe(
-        self, *, participant_identity: str, track_sid: str, text: str, final: bool
+        self,
+        *,
+        participant_identity: str,
+        track_sid: str,
+        text: str,
+        final: bool,
+        segment_id: str | None = None,
     ) -> None:
         """Publish one transcription segment, catching and logging any failure rather than
         letting it propagate -- losing a transcript line is much less bad than losing the whole
@@ -235,7 +251,7 @@ class SessionWorker:
             await self._room_client.publish_transcription(
                 participant_identity=participant_identity,
                 track_sid=track_sid,
-                segment_id=str(uuid.uuid4()),
+                segment_id=segment_id or str(uuid.uuid4()),
                 text=text,
                 final=final,
             )
@@ -248,15 +264,72 @@ class SessionWorker:
             )
 
     async def speak(self, text: str) -> None:
-        """Synthesize `text` (via the injected `tts` function) and publish it to the room."""
+        """Synthesize `text` (via the injected `tts` function) and publish it to the room.
+
+        Split into sentences and sent through `speak_stream`, so the first sentence starts
+        playing while the rest are still being synthesized."""
+        await self.speak_stream(sentence_chunks(_single(text)))
+
+    async def speak_stream(self, sentences: AsyncIterator[str]) -> None:
+        """Speak a stream of sentences (e.g. `sentence_chunks(llm.stream(...))`) with
+        synthesis pipelined ahead of publishing.
+
+        A producer task synthesizes sentence N+1 while sentence N is being published, buffered
+        at most `_SPEAK_PIPELINE_DEPTH` clips ahead so a slow room can't make it run away.
+        The reply is one transcript segment that grows as each sentence's audio is published
+        (interim), then is marked final -- so the transcript shows one line per reply and only
+        ever contains what was actually spoken. If this call is cancelled (e.g. on barge-in) or
+        publishing fails, the producer is cancelled too and the source stream is closed.
+        """
         if self._tts is None:
             raise NotImplementedError(
                 "SessionWorker was constructed without a `tts` function -- pass one, or call "
-                "`say_audio()` directly with already-synthesized audio (e.g. from Track A's "
-                "AvatarServiceClient.generate())."
+                "`say_audio()` directly with already-synthesized audio."
             )
-        audio = await self._tts(text)
-        await self.say_audio(audio, text=text)
+        tts = self._tts
+        queue: asyncio.Queue[tuple[str, bytes] | BaseException | None] = asyncio.Queue(
+            maxsize=_SPEAK_PIPELINE_DEPTH
+        )
+
+        async def _produce() -> None:
+            try:
+                async for sentence in sentences:
+                    await queue.put((sentence, await tts(sentence)))
+                await queue.put(None)
+            except asyncio.CancelledError:
+                raise
+            except BaseException as exc:
+                await queue.put(exc)
+
+        producer = asyncio.create_task(_produce())
+        segment_id = str(uuid.uuid4())
+        spoken: list[str] = []
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                if isinstance(item, BaseException):
+                    raise item
+                sentence, audio = item
+                await self._room_client.publish_audio(audio)
+                spoken.append(sentence)
+                await self._publish_agent_transcription(
+                    " ".join(spoken), segment_id=segment_id, final=False
+                )
+            if spoken:
+                await self._publish_agent_transcription(
+                    " ".join(spoken), segment_id=segment_id, final=True
+                )
+        finally:
+            producer.cancel()
+            try:
+                await producer
+            except asyncio.CancelledError:
+                pass
+            aclose = getattr(sentences, "aclose", None)
+            if aclose is not None:
+                await aclose()
 
     async def say_audio(self, audio: bytes, *, text: str | None = None) -> None:
         """Publish already-synthesized audio to the room.

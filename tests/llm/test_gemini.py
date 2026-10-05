@@ -150,3 +150,54 @@ async def test_complete_does_not_set_response_schema() -> None:
     call = client.aio.models.calls[0]
     assert call["config"].response_schema is None
     assert call["config"].response_mime_type is None
+
+
+class _FakeStreamModels:
+    def __init__(self, chunks: list[Any], *, fail_open: int = 0) -> None:
+        self._chunks = chunks
+        self._fail_open = fail_open
+        self.open_calls = 0
+
+    async def generate_content_stream(self, *, model: str, contents: Any, config: Any) -> Any:
+        self.open_calls += 1
+        if self.open_calls <= self._fail_open:
+            raise RuntimeError("boom")
+
+        async def _gen() -> Any:
+            for chunk in self._chunks:
+                if isinstance(chunk, Exception):
+                    raise chunk
+                yield chunk
+
+        return _gen()
+
+
+def _stream_provider(models: _FakeStreamModels) -> GeminiLLMProvider:
+    client = _FakeClient([])
+    client.aio.models = models  # type: ignore[assignment]
+    return GeminiLLMProvider(api_key="unused", client=client)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_stream_yields_text_deltas_and_skips_empty_chunks() -> None:
+    models = _FakeStreamModels([_FakeResponse(text="Hel"), _FakeResponse(text=None),
+                                _FakeResponse(text="lo.")])
+
+    out = [t async for t in _stream_provider(models).stream("hi")]
+
+    assert out == ["Hel", "lo."]
+
+
+@pytest.mark.asyncio
+async def test_stream_retries_opening_but_not_mid_stream_failures() -> None:
+    models = _FakeStreamModels([_FakeResponse(text="ok")], fail_open=1)
+    assert [t async for t in _stream_provider(models).stream("hi")] == ["ok"]
+    assert models.open_calls == 2
+
+    broken = _FakeStreamModels([_FakeResponse(text="partial"), RuntimeError("dropped")])
+    seen: list[str] = []
+    with pytest.raises(GeminiRequestError):
+        async for t in _stream_provider(broken).stream("hi"):
+            seen.append(t)
+    assert seen == ["partial"]
+    assert broken.open_calls == 1

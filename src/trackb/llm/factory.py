@@ -24,4 +24,13 @@ def build_llm_provider(settings: Settings | None = None) -> LLMProvider:
 
         return GeminiLLMProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
 
+    if settings.llm_provider == "ollama":
+        from trackb.llm.ollama import OllamaLLMProvider
+
+        return OllamaLLMProvider(
+            model=settings.ollama_model,
+            base_url=settings.ollama_base_url,
+            keep_alive=settings.ollama_keep_alive,
+        )
+
     return MockLLMProvider()

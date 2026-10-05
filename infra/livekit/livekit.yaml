@@ -1,0 +1,11 @@
+# Local, development-only LiveKit server config. The key/secret below are public dev values --
+# never reuse them anywhere reachable from the internet.
+port: 7880            # signaling (WebSocket/HTTP)
+rtc:
+  tcp_port: 7881      # TCP media fallback (when UDP is blocked)
+  udp_port: 7882      # single UDP media port (simpler to open/forward than a range)
+  use_external_ip: false
+keys:
+  devkey: dev-secret-change-me-0123456789abcdef
+logging:
+  level: info
