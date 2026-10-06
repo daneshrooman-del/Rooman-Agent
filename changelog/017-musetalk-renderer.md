@@ -45,3 +45,14 @@ runs at 4× the needed rate, so optimising it can't help.
 ## Concurrency note
 Sessions share one renderer, so two simultaneous calls would share the GPUs' throughput (and the
 avatar frame cursor). Fine for one caller at a time; revisit before multi-caller use.
+
+## Follow-up: first Kaggle run of Step 5c
+- All three renderer runs failed at import: `trackb.avatar.musetalk` → `trackb.tts.base` executes
+  the `trackb.tts` package `__init__`, which imports the Piper provider → `trackb.config` →
+  `pydantic_settings`, not installed in the benchmark notebook. My local tests ran in the full
+  project venv, which hid it.
+- Reproduced in a clean venv with only what the notebook installs; with `pydantic-settings`
+  added the import succeeds and pulls in no heavy modules (no torch/cv2/faster-whisper/piper/genai
+  until a renderer is loaded). Notebook install line updated.
+- The plot cell crashed only because no frames existed; it now says so instead.
+- MuseTalk's own benchmark in the same run: 11.7 fps, `gpu_busy` 128.7 s of 129.3 s — consistent.
