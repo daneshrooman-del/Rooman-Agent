@@ -1,0 +1,120 @@
+{
+ "text": "Hi, I'm Shalya, a digital twin made from a two minute video. I can present, answer questions, and talk with your customers live.",
+ "words": [
+  {
+   "text": "Hi,",
+   "start": 0.0,
+   "end": 0.34
+  },
+  {
+   "text": "I'm",
+   "start": 0.58,
+   "end": 0.78
+  },
+  {
+   "text": "Shalya,",
+   "start": 0.78,
+   "end": 1.16
+  },
+  {
+   "text": "a",
+   "start": 1.38,
+   "end": 1.62
+  },
+  {
+   "text": "digital",
+   "start": 1.62,
+   "end": 1.88
+  },
+  {
+   "text": "twin",
+   "start": 1.88,
+   "end": 2.24
+  },
+  {
+   "text": "made",
+   "start": 2.24,
+   "end": 2.46
+  },
+  {
+   "text": "from",
+   "start": 2.46,
+   "end": 2.68
+  },
+  {
+   "text": "a",
+   "start": 2.68,
+   "end": 2.82
+  },
+  {
+   "text": "two",
+   "start": 2.82,
+   "end": 3.06
+  },
+  {
+   "text": "minute",
+   "start": 3.06,
+   "end": 3.3
+  },
+  {
+   "text": "video.",
+   "start": 3.3,
+   "end": 3.7
+  },
+  {
+   "text": "I",
+   "start": 4.18,
+   "end": 4.24
+  },
+  {
+   "text": "can",
+   "start": 4.24,
+   "end": 4.46
+  },
+  {
+   "text": "present,",
+   "start": 4.46,
+   "end": 4.86
+  },
+  {
+   "text": "answer",
+   "start": 5.14,
+   "end": 5.4
+  },
+  {
+   "text": "questions,",
+   "start": 5.4,
+   "end": 5.9
+  },
+  {
+   "text": "and",
+   "start": 6.28,
+   "end": 6.38
+  },
+  {
+   "text": "talk",
+   "start": 6.38,
+   "end": 6.62
+  },
+  {
+   "text": "with",
+   "start": 6.62,
+   "end": 6.8
+  },
+  {
+   "text": "your",
+   "start": 6.8,
+   "end": 6.94
+  },
+  {
+   "text": "customers",
+   "start": 6.94,
+   "end": 7.38
+  },
+  {
+   "text": "live.",
+   "start": 7.38,
+   "end": 7.76
+  }
+ ]
+}

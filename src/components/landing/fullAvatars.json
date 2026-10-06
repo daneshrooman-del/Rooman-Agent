@@ -1,0 +1,29 @@
+{
+  "_comment": "Full-body presenter clips (tools/lipsync/full_avatar.py). *word* marks an emphasised word: the TTS stresses it and the realism check expects a gesture near it.",
+  "motionPrompt": "A real person talking to a camera in a friendly, confident tone. Natural blinking every 3-5 seconds. Eyebrows rise on emphasized words. Head makes small nods and tilts that follow the sentence rhythm, never a repeating loop. Shoulders rise slightly when breathing. Both hands gesture naturally while explaining: open palms, small counting gestures, a hand moving outward for emphasis, then returning to rest. Hands are sometimes still. Occasionally glances away briefly, then back at the camera. No stiff or frozen poses. No exaggerated or cartoonish movement.",
+  "strongerMotion": [
+    "",
+    " Gestures are clearly visible and well-timed: at least one open-palm gesture and one counting gesture. Fingers stay anatomically correct, five per hand.",
+    " Use deliberate, varied hand gestures on every emphasized word, with natural head tilts and visible breathing in the shoulders. Hands always stay in front of the body with correct fingers."
+  ],
+  "presenters": {
+    "shalya": {
+      "photo": "/avatars/avatar_shalya.jpg",
+      "voice": "Sarah",
+      "background": "a bright, minimal studio with a soft warm beige wall and a tall green plant, softly out of focus",
+      "script": "Hi, I'm Shalya. I'm a digital twin... made from just *two* minutes of video. I can present, answer questions, and talk with your customers *live*."
+    },
+    "aria": {
+      "photo": "/avatars/avatar_aria.jpg",
+      "voice": "Alice",
+      "background": "a calm loft with a softly lit exposed red-brick wall and warm window light, softly out of focus",
+      "script": "Hello! I'm Aria. Give me *any* script, and I'll turn it into a finished video in *minutes*. No camera. No reshoots."
+    },
+    "dev": {
+      "photo": "/avatars/avatar_dev.jpg",
+      "voice": "Chris",
+      "background": "a dark blue-gray studio backdrop with a soft rim light and subtle gradient, no objects",
+      "script": "Hey, I'm Dev. I walk teams through product updates, onboarding, and *technical* demos. And I can do it in *English*... or Hindi."
+    }
+  }
+}

@@ -1,0 +1,89 @@
+/* ============================================================
+   Landing page — light, calm theme.
+   Warm paper background, near-black type, one solid accent (forest green).
+   No gradients, glows or glass: flat colour, thin borders, real photos.
+   The app's theme tokens are re-pointed inside .m-landing only.
+   ============================================================ */
+
+.m-landing {
+  --m-paper: #FAF8F4;
+  --m-white: #FFFFFF;
+  --m-sand: #F1ECE3;
+  --m-ink: #1A1A1A;
+  --m-muted: #5B5750;
+  --m-line: rgb(26 26 26 / 0.10);
+  --m-green: #1F5C4A;
+  --m-green-hover: #174838;
+  --m-green-soft: #E7EFEA;
+
+  --color-canvas: var(--m-paper);
+  --color-surface: var(--m-white);
+  --color-surface-2: var(--m-sand);
+  --color-fg: var(--m-ink);
+  --color-fg-muted: var(--m-muted);
+  --color-fg-subtle: var(--m-muted);
+  --color-line: var(--m-line);
+  --color-line-strong: rgb(26 26 26 / 0.18);
+  --color-accent: var(--m-green);
+  --color-accent-soft: var(--m-green-soft);
+  --color-success: #2F7A55;
+  --rgb-fg: 26 26 26;
+  --rgb-accent: 31 92 74;
+  --grad-accent: var(--m-green);
+
+  background: var(--m-paper);
+  color: var(--m-ink);
+}
+
+.m-wrap { width: 100%; max-width: 1180px; margin-inline: auto; padding-inline: 20px; }
+@media (min-width: 640px) { .m-wrap { padding-inline: 32px; } }
+
+.m-section { padding-block: 88px; }
+@media (min-width: 1024px) { .m-section { padding-block: 112px; } }
+
+.m-card {
+  background: var(--m-white);
+  border: 1px solid var(--m-line);
+  border-radius: 18px;
+}
+.m-card-hover { transition: border-color 0.25s ease, transform 0.25s ease; }
+.m-card-hover:hover { border-color: rgb(31 92 74 / 0.45); transform: translateY(-2px); }
+
+/* Buttons: solid, rounded rectangles */
+.m-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 0 22px; border-radius: 12px;
+  font-weight: 600; font-size: 15px; white-space: nowrap;
+  border: 1px solid transparent;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.m-btn svg { transition: transform 0.25s ease; }
+.m-btn:hover svg { transform: translateX(3px); }
+.m-btn-primary { background: var(--m-green); color: #FFFFFF; }
+.m-btn-primary:hover { background: var(--m-green-hover); }
+.m-btn-ghost { background: var(--m-white); color: var(--m-ink); border-color: rgb(26 26 26 / 0.16); }
+.m-btn-ghost:hover { border-color: var(--m-ink); }
+.m-btn-sm { min-height: 40px; padding: 0 16px; font-size: 14px; border-radius: 10px; }
+
+/* Accent word in headlines: solid colour, not a gradient */
+.m-grad-text { color: var(--m-green); }
+
+/* Scroll reveal: a short, quiet fade */
+.m-reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.m-reveal.is-in { opacity: 1; transform: none; }
+
+.m-rise { animation: m-rise 0.7s ease both; }
+@keyframes m-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+.m-landing [id] { scroll-margin-top: 88px; }
+
+.m-faq summary { list-style: none; cursor: pointer; }
+.m-faq summary::-webkit-details-marker { display: none; }
+.m-faq details[open] .m-faq-icon { transform: rotate(45deg); }
+.m-faq-icon { transition: transform 0.25s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .m-reveal { opacity: 1; transform: none; transition: none; }
+  .m-rise { animation: none; }
+  .m-card-hover, .m-btn, .m-btn svg, .m-faq-icon { transition: none; }
+}

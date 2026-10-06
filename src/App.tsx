@@ -3,9 +3,14 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { WorkspaceProvider } from '@/state/workspace'
 import { ToastProvider } from '@/components/ui/Toast'
 import { AppShell } from '@/components/layout/AppShell'
+import { RequireAuth } from '@/components/auth/RequireAuth'
 
 /* Route-level code splitting: each experience loads on demand. */
 const LandingPage = lazy(() => import('@/pages/LandingPage'))
+const HowItWorksPage = lazy(() => import('@/pages/landing/InfoPages').then((m) => ({ default: m.HowItWorksPage })))
+const FeaturesPage = lazy(() => import('@/pages/landing/InfoPages').then((m) => ({ default: m.FeaturesPage })))
+const UseCasesPage = lazy(() => import('@/pages/landing/InfoPages').then((m) => ({ default: m.UseCasesPage })))
+const FaqPage = lazy(() => import('@/pages/landing/InfoPages').then((m) => ({ default: m.FaqPage })))
 const HomePage = lazy(() => import('@/pages/HomePage'))
 const AvatarsPage = lazy(() => import('@/pages/avatars/AvatarsPage'))
 const AvatarCreatePage = lazy(() => import('@/pages/avatars/AvatarCreatePage'))
@@ -28,6 +33,10 @@ const router = createBrowserRouter([
     path: '/',
     element: <LandingPage />,
   },
+  { path: '/how-it-works', element: <HowItWorksPage /> },
+  { path: '/features', element: <FeaturesPage /> },
+  { path: '/use-cases', element: <UseCasesPage /> },
+  { path: '/faq', element: <FaqPage /> },
   {
     path: '/signin',
     element: <SignInPage />,
@@ -37,7 +46,11 @@ const router = createBrowserRouter([
     element: <SignUpPage />,
   },
   {
-    element: <AppShell />,
+    element: (
+      <RequireAuth>
+        <AppShell />
+      </RequireAuth>
+    ),
     children: [
       { path: 'workspace', element: <HomePage /> },
       { path: 'home', element: <HomePage /> },

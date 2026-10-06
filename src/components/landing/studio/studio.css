@@ -1,0 +1,152 @@
+/* ============================================================
+   Landing page — "Bone and cobalt" on white.
+   White page, cool off-white surfaces, cobalt ink type and buttons, a brighter cobalt accent.
+   Wide expanded headlines (Archivo), flat colour, hairlines, real 3D (WebGL hero,
+   scroll-driven prism, coverflow). No gradients, glows or glass.
+   App theme tokens are re-pointed inside .s-landing only.
+   ============================================================ */
+
+.s-landing {
+  /* ── Theme tokens: "Bone and cobalt" on white. Every colour on the landing page comes from here. ── */
+  --bg: #FFFFFF;                       /* page background */
+  --surface: #F6F7FB;                  /* cards, alternate section bands, inputs */
+  --ink: #1D3A9A;                      /* headlines, primary text, primary buttons, logo */
+  --accent: #3D63D6;                   /* highlighted word, section labels, links, active states, shapes */
+  --muted: #4B5A8F;                    /* paragraphs, supporting copy, inactive items, footer links */
+  --border: rgba(29, 58, 154, 0.14);   /* hairlines and card borders */
+  --on-ink: #FFFFFF;                   /* text on ink backgrounds */
+  --ink-hover: #17307F;                /* primary button hover */
+  --ink-edge: #102466;                 /* pressable edge under primary buttons */
+
+  --s-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* the app's Tailwind tokens, re-pointed inside the landing page */
+  --color-canvas: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--ink);
+  --color-fg-muted: var(--muted);
+  --color-fg-subtle: var(--muted);
+  --color-line: var(--border);
+  --color-accent: var(--accent);
+  --font-display: 'Archivo', 'Inter', system-ui, sans-serif;
+
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.s-wrap { width: 100%; max-width: 1240px; margin-inline: auto; padding-inline: 20px; }
+@media (min-width: 640px) { .s-wrap { padding-inline: 36px; } }
+.s-section { padding-block: 96px; }
+@media (min-width: 1024px) { .s-section { padding-block: 128px; } }
+.s-landing [id] { scroll-margin-top: 84px; }
+
+/* Wide, heavy display type */
+.s-display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-stretch: 118%;
+  letter-spacing: -0.035em;
+  line-height: 0.95;
+}
+.s-h2 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-stretch: 112%;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+  font-size: clamp(2.1rem, 1.3rem + 3vw, 3.9rem);
+}
+.s-kicker {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: var(--accent);
+}
+.s-kicker::before { content: ''; width: 18px; height: 2px; background: var(--accent); }
+
+/* Buttons */
+.s-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 52px; padding: 0 24px; border-radius: 14px;
+  font-weight: 600; font-size: 15.5px; white-space: nowrap;
+  border: 1.5px solid transparent;
+  transition: transform 0.2s var(--s-ease), background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.s-btn svg { transition: transform 0.3s var(--s-ease); }
+.s-btn:hover svg { transform: translateX(4px); }
+.s-btn-primary { background: var(--ink); color: var(--on-ink); box-shadow: 0 4px 0 var(--ink-edge); }
+.s-btn-primary:hover { background: var(--ink-hover); transform: translateY(-2px); box-shadow: 0 6px 0 var(--ink-edge); }
+.s-btn-primary:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink-edge); }
+.s-btn-ink { background: var(--ink); color: var(--on-ink); }
+.s-btn-ink:hover { background: var(--ink-hover); }
+.s-btn-ghost { background: transparent; color: var(--ink); border-color: var(--ink); }
+.s-btn-ghost:hover { background: var(--ink); color: var(--on-ink); }
+.s-btn-sm { min-height: 42px; padding: 0 18px; font-size: 14.5px; border-radius: 12px; }
+
+/* Cards */
+.s-card { background: var(--surface); border: 1px solid var(--border); border-radius: 22px; }
+
+/* Reveal */
+.s-reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.8s var(--s-ease), transform 0.9s var(--s-ease); }
+.s-reveal.is-in { opacity: 1; transform: none; }
+
+/* Hero headline: words lift in with a 3D flip */
+.s-flip { perspective: 800px; }
+.s-flip > span { display: inline-block; transform-origin: 50% 100%; animation: s-flip 0.9s var(--s-ease) both; }
+@keyframes s-flip { from { opacity: 0; transform: rotateX(-90deg) translateY(0.2em); } to { opacity: 1; transform: none; } }
+.s-fade { animation: s-fade 0.9s var(--s-ease) both; }
+@keyframes s-fade { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+/* 3D tilt (Tilt3D) */
+.s-landing .l-tilt {
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  transform: perspective(1000px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  transform-style: preserve-3d;
+  transition: transform 0.5s var(--s-ease);
+}
+.s-landing .l-tilt:hover { transition-duration: 0.12s; }
+
+/* Scroll story: a three-sided prism that turns as you scroll */
+.s-prism-scene { perspective: 1600px; }
+.s-prism { position: relative; transform-style: preserve-3d; will-change: transform; }
+.s-prism-face {
+  position: absolute; inset: 0;
+  backface-visibility: hidden;
+  border-radius: 26px; overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* Coverflow */
+.s-cover { perspective: 1400px; }
+.s-cover-card {
+  position: absolute; left: 50%; top: 0;
+  transition: transform 0.8s var(--s-ease), opacity 0.6s ease, filter 0.6s ease;
+  transform-style: preserve-3d;
+}
+
+.s-faq summary { list-style: none; cursor: pointer; }
+.s-faq summary::-webkit-details-marker { display: none; }
+.s-faq details[open] .s-faq-icon { transform: rotate(45deg); background: var(--accent); color: var(--on-ink); border-color: var(--accent); }
+.s-faq-icon { transition: transform 0.3s var(--s-ease), background-color 0.2s; }
+
+.s-landing :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .s-reveal { opacity: 1; transform: none; transition: none; }
+  .s-flip > span, .s-fade { animation: none; }
+  .s-landing .l-tilt { transform: none; }
+  .s-cover-card, .s-btn, .s-btn svg { transition: none; }
+}
+@media (hover: none) {
+  .s-landing .l-tilt { transform: none; }
+}
+
+/* Logo mark: a small tile that flips in 3D when the wordmark is hovered */
+.s-flip-tile {
+  position: relative; display: inline-block; width: 12px; height: 12px;
+  transform-style: preserve-3d; transition: transform 0.6s var(--s-ease);
+}
+.s-flip-tile-face { position: absolute; inset: 0; border-radius: 3px; backface-visibility: hidden; }
+.s-flip-tile-back { transform: rotateY(180deg); }
+.group\/wm:hover .s-flip-tile { transform: perspective(200px) rotateY(180deg) rotateX(18deg); }
+@media (prefers-reduced-motion: reduce) { .s-flip-tile { transition: none; } }

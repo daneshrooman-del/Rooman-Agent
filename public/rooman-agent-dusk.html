@@ -1,0 +1,892 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#2B3550" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232B3550'/%3E%3Crect x='10' y='10' width='12' height='12' rx='4' fill='%23F2A7B8'/%3E%3C/svg%3E" />
+<title>Rooman Agent — your face, your voice, your agent</title>
+<meta name="description" content="Rooman Agent by Rooman Technologies turns a short video of you into an AI avatar that holds live conversations with your face and your voice." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700..800&family=Figtree:wght@400..600&display=swap" rel="stylesheet" />
+<style>
+  /* ── "Dusk" palette. Rose is for primary buttons, the live indicator and the 3D glow only;
+        it is never used as text on card surfaces (contrast there is below AA). ── */
+  :root {
+    --slate: #3C4A6B;
+    --deep: #2B3550;
+    --band: #35425F;
+    --card: #46567C;
+    --butter: #F7E7A6;
+    --rose: #F2A7B8;
+    --muted: #C9CFE0;
+    --line: rgba(247, 231, 166, 0.18);
+
+    --font-head: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+    --font-body: 'Figtree', 'Segoe UI', system-ui, sans-serif;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --wrap: 1240px;
+    --gutter: clamp(16px, 4vw, 40px);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--slate);
+    color: var(--muted);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  img, svg, canvas { display: block; max-width: 100%; }
+  a { color: inherit; }
+  button { font: inherit; color: inherit; }
+  h1, h2, h3 {
+    font-family: var(--font-head);
+    color: var(--butter);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1;
+    margin: 0;
+  }
+  p { margin: 0; }
+  [id] { scroll-margin-top: 88px; }
+
+  :focus-visible { outline: 3px solid var(--butter); outline-offset: 3px; border-radius: 6px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .skip { position: absolute; left: 12px; top: -60px; z-index: 100; background: var(--butter); color: var(--deep); padding: 10px 16px; border-radius: 10px; font-weight: 600; text-decoration: none; }
+  .skip:focus { top: 12px; }
+
+  .wrap { width: 100%; max-width: var(--wrap); margin-inline: auto; padding-inline: var(--gutter); }
+  .section { padding-block: clamp(72px, 10vw, 128px); }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 48px; padding: 0 22px; border-radius: 12px;
+    font-weight: 600; font-size: 16px; text-decoration: none; cursor: pointer;
+    border: 1.5px solid transparent; white-space: nowrap;
+    transition: transform .25s var(--ease), background-color .25s var(--ease), color .25s var(--ease), border-color .25s var(--ease);
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-rose { background: var(--rose); color: var(--deep); }
+  .btn-rose:hover { background: var(--butter); }
+  .btn-outline { border-color: var(--butter); color: var(--butter); background: transparent; }
+  .btn-outline:hover { background: var(--butter); color: var(--deep); }
+  .btn-sm { min-height: 40px; padding: 0 16px; font-size: 15px; border-radius: 10px; }
+
+  /* ── Header ── */
+  .header { position: sticky; top: 0; z-index: 50; background: var(--deep); border-bottom: 1px solid var(--line); }
+  .header-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; height: 68px; }
+  .wordmark { font-family: var(--font-head); font-weight: 800; font-size: 22px; letter-spacing: -0.035em; color: var(--butter); text-decoration: none; display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+  .wordmark-mark { width: 12px; height: 12px; border-radius: 4px; background: var(--rose); }
+  .nav ul { display: flex; gap: 30px; list-style: none; margin: 0; padding: 0; }
+  .nav a { text-decoration: none; color: var(--muted); font-weight: 500; font-size: 15.5px; transition: color .2s; }
+  .nav a:hover { color: var(--butter); }
+  .header-actions { display: flex; align-items: center; gap: 18px; }
+  .signin { text-decoration: none; color: var(--butter); font-weight: 600; font-size: 15.5px; }
+  .signin:hover { text-decoration: underline; text-underline-offset: 4px; }
+  .menu-btn { display: none; background: none; border: 1px solid var(--line); border-radius: 10px; height: 40px; padding: 0 14px; color: var(--butter); font-weight: 600; cursor: pointer; }
+  .mobile-nav { display: none; }
+
+  @media (max-width: 960px) {
+    .nav { display: none; }
+    .menu-btn { display: inline-flex; align-items: center; }
+    .mobile-nav:not([hidden]) { display: block; border-top: 1px solid var(--line); padding: 8px 0 20px; }
+    .mobile-nav ul { list-style: none; margin: 0; padding: 0; }
+    .mobile-nav a { display: block; padding: 14px 0; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--butter); font-family: var(--font-head); font-weight: 700; font-size: 24px; letter-spacing: -0.03em; }
+    .mobile-nav .signin-m { display: none; }
+  }
+  @media (max-width: 480px) {
+    .header-actions .signin { display: none; }
+    .mobile-nav .signin-m { display: block; }
+    .wordmark { font-size: 19px; }
+    .header-actions { gap: 10px; }
+    .header-actions .btn-sm { padding: 0 12px; font-size: 14px; }
+    .menu-btn { padding: 0 11px; }
+  }
+  @media (max-width: 400px) {
+    .header-row { gap: 10px; }
+    .wordmark { font-size: 18px; gap: 7px; }
+    .wordmark-mark { width: 10px; height: 10px; }
+  }
+
+  /* ── Hero ── */
+  .hero { padding-block: clamp(40px, 7vw, 96px) clamp(64px, 9vw, 120px); }
+  .hero-grid { display: grid; gap: clamp(40px, 6vw, 72px); align-items: center; }
+  @media (min-width: 960px) { .hero-grid { grid-template-columns: 1.05fr 1fr; } }
+
+  .hero h1 { font-size: clamp(2.75rem, 1.4rem + 6.2vw, 6rem); perspective: 900px; }
+  .hero h1 .line { display: block; transform-origin: 50% 100%; animation: flip-in .9s var(--ease) both; backface-visibility: hidden; }
+  .hero h1 .line:nth-child(2) { animation-delay: .12s; }
+  .hero h1 .line:nth-child(3) { animation-delay: .24s; }
+  .hero h1 .accent { position: relative; white-space: nowrap; }
+  .hero h1 .accent::after { content: ''; position: absolute; left: 0; right: .08em; bottom: .02em; height: .1em; border-radius: 99px; background: var(--rose); }
+  @keyframes flip-in {
+    from { opacity: 0; transform: rotateX(-88deg) translateY(.18em); }
+    to   { opacity: 1; transform: none; }
+  }
+  .lede { margin-top: 28px; max-width: 34em; font-size: clamp(1.05rem, 1rem + .35vw, 1.25rem); color: var(--muted); animation: fade-up .8s .35s var(--ease) both; }
+  .hero-ctas { margin-top: 36px; display: flex; flex-wrap: wrap; gap: 14px; animation: fade-up .8s .45s var(--ease) both; }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+  /* ── 3D stage ── */
+  .stage {
+    position: relative; margin: 0; width: 100%; max-width: 580px; justify-self: center;
+    aspect-ratio: 1 / 1; border-radius: 32px; overflow: hidden;
+    background: var(--band); border: 1px solid var(--line);
+    isolation: isolate;
+  }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .stage[data-mode="stack"] canvas { visibility: hidden; }
+  .stage-top { position: absolute; z-index: 3; top: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .seg { display: inline-flex; padding: 4px; gap: 2px; border-radius: 12px; background: rgba(43, 53, 80, .82); border: 1px solid var(--line); }
+  .seg button { border: 0; background: transparent; color: var(--muted); font-weight: 600; font-size: 14px; height: 34px; padding: 0 14px; border-radius: 9px; cursor: pointer; transition: background-color .2s, color .2s; }
+  .seg button:hover { color: var(--butter); }
+  .seg button[aria-checked="true"] { background: var(--butter); color: var(--deep); }
+  .seg button[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+  .live-dot { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--butter); background: rgba(43, 53, 80, .82); border: 1px solid var(--line); border-radius: 99px; padding: 6px 12px; }
+  .live-dot i { width: 8px; height: 8px; border-radius: 50%; background: var(--rose); }
+  .stage.is-speaking .live-dot i { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.6); opacity: .55; } }
+
+  .stage-bottom { position: absolute; z-index: 3; left: 16px; right: 16px; bottom: 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .caption {
+    flex: 1; min-height: 1.5em; max-width: 30em; font-size: 15px; line-height: 1.45; color: var(--butter);
+    background: rgba(43, 53, 80, .86); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px;
+    opacity: 0; transform: translateY(6px); transition: opacity .3s, transform .3s var(--ease);
+  }
+  .caption.is-on { opacity: 1; transform: none; }
+  .caption .cursor { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px; background: var(--rose); }
+  .speak-btn { flex: none; }
+  .speak-btn svg { width: 16px; height: 16px; }
+
+  /* Stack mode (CSS 3D cards) */
+  .stack { position: absolute; inset: 0; z-index: 2; perspective: 1100px; display: none; }
+  .stage[data-mode="stack"] .stack { display: block; }
+  .stack-scene { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); }
+  .s-card {
+    position: absolute; border-radius: 20px; background: var(--card); border: 1px solid var(--line);
+    box-shadow: 0 24px 48px -24px rgba(43, 53, 80, .9);
+    animation: float 7s ease-in-out infinite;
+  }
+  .s-card.portrait { width: 46%; aspect-ratio: 4 / 5; left: 12%; top: 17%; overflow: hidden; transform: translateZ(40px) rotateZ(-3deg); }
+  .s-card.portrait img { width: 100%; height: 100%; object-fit: cover; }
+  .s-card.portrait .chip { position: absolute; left: 12px; top: 12px; display: inline-flex; align-items: center; gap: 7px; background: var(--deep); color: var(--butter); font-size: 13px; font-weight: 600; padding: 5px 10px; border-radius: 99px; }
+  .s-card.portrait .chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--rose); }
+  .s-card.voice { width: 44%; right: 8%; top: 22%; padding: 16px; transform: translateZ(90px) rotateZ(3deg); animation-delay: -2.3s; }
+  .s-card.voice p { color: var(--butter); font-weight: 600; font-size: 15px; }
+  .wave { margin-top: 14px; height: 54px; display: flex; align-items: center; gap: 3px; }
+  .wave span { flex: 1; height: 20%; border-radius: 99px; background: var(--rose); transition: height .08s linear; }
+  .s-card.note { width: 50%; right: 10%; top: 54%; padding: 18px; transform: translateZ(140px) rotateZ(-2deg); animation-delay: -4.6s; }
+  .s-card.note strong { display: block; color: var(--butter); font-family: var(--font-head); font-size: 19px; letter-spacing: -0.02em; line-height: 1.1; }
+  .s-card.note p { margin-top: 8px; font-size: 14.5px; line-height: 1.45; color: var(--muted); }
+  @keyframes float { 50% { translate: 0 -8px; } }
+
+  @media (max-width: 520px) {
+    .stage { border-radius: 24px; }
+    .stage-top { top: 12px; left: 12px; right: 12px; }
+    .stage-bottom { left: 12px; right: 12px; bottom: 12px; flex-direction: column; align-items: stretch; }
+    .seg button { padding: 0 11px; font-size: 13.5px; }
+    .live-dot { display: none; }
+    .caption { font-size: 14px; }
+    .s-card.voice p, .s-card.note strong { font-size: 14px; }
+    .s-card.note p { font-size: 12.5px; }
+    .s-card.voice, .s-card.note { padding: 12px; }
+    .wave { height: 36px; margin-top: 8px; }
+  }
+
+  /* ── Section heads ── */
+  .head { max-width: 44rem; }
+  .head h2 { font-size: clamp(2.1rem, 1.3rem + 3.2vw, 3.75rem); }
+  .head p { margin-top: 18px; font-size: 1.125rem; }
+
+  /* ── Steps ── */
+  .band { background: var(--band); border-block: 1px solid var(--line); }
+  .steps { margin: clamp(40px, 6vw, 64px) 0 0; padding: 0; list-style: none; display: grid; gap: 20px; counter-reset: step; }
+  @media (min-width: 860px) { .steps { grid-template-columns: repeat(3, 1fr); gap: 28px; } }
+  .step {
+    position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 24px;
+    padding: 28px; min-height: 260px; display: flex; flex-direction: column;
+    transform-style: preserve-3d; transition: transform .45s var(--ease), border-color .3s;
+  }
+  .step:hover { border-color: rgba(247, 231, 166, .4); }
+  .step-num { font-family: var(--font-head); font-weight: 800; font-size: 64px; line-height: .9; letter-spacing: -0.05em; color: var(--butter); }
+  .step h3 { margin-top: 40px; font-size: 1.6rem; letter-spacing: -0.03em; line-height: 1.1; }
+  .step p { margin-top: 12px; }
+  .step-arrow { position: absolute; z-index: 2; display: none; }
+  @media (min-width: 860px) {
+    .step:not(:last-child) .step-arrow { display: flex; top: 50%; right: -24px; width: 20px; height: 20px; translate: 0 -50%; color: var(--butter); }
+  }
+
+  /* ── Use cases ── */
+  .cases { margin-top: clamp(40px, 6vw, 64px); display: grid; gap: 20px; }
+  @media (min-width: 700px) { .cases { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1100px) { .cases { grid-template-columns: repeat(4, 1fr); } }
+  .case { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 26px; }
+  .case-icon { width: 44px; height: 44px; border-radius: 12px; background: var(--deep); display: grid; place-items: center; color: var(--rose); }
+  .case-icon svg { width: 22px; height: 22px; }
+  .case h3 { margin-top: 28px; font-size: 1.4rem; letter-spacing: -0.03em; line-height: 1.1; }
+  .case p { margin-top: 10px; }
+
+  /* ── FAQ ── */
+  .faq-grid { display: grid; gap: 40px; }
+  @media (min-width: 960px) { .faq-grid { grid-template-columns: 1fr 1.5fr; gap: 64px; } }
+  .faq { border-top: 1px solid var(--line); }
+  .faq details { border-bottom: 1px solid var(--line); }
+  .faq summary {
+    list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 20px;
+    padding: 22px 0; color: var(--butter); font-weight: 600; font-size: 1.125rem; border-radius: 6px;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary .plus { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; transition: transform .35s var(--ease), background-color .2s; }
+  .faq summary:hover .plus { background: rgba(247, 231, 166, .08); }
+  .faq details[open] summary .plus { transform: rotate(45deg); }
+  .faq .answer { padding: 0 48px 24px 0; max-width: 40em; }
+
+  /* ── Final band ── */
+  .final { background: var(--deep); border-top: 1px solid var(--line); }
+  .final-inner { display: grid; gap: 32px; align-items: end; }
+  @media (min-width: 900px) { .final-inner { grid-template-columns: 1.6fr auto; } }
+  .final h2 { font-size: clamp(2.2rem, 1.2rem + 4vw, 4.6rem); max-width: 16ch; }
+
+  .footer { background: var(--deep); border-top: 1px solid var(--line); padding-block: 36px; font-size: 15px; }
+  .footer-row { display: flex; flex-wrap: wrap; gap: 16px 32px; justify-content: space-between; align-items: center; }
+  .footer nav ul { display: flex; flex-wrap: wrap; gap: 8px 24px; list-style: none; margin: 0; padding: 0; }
+  .footer a { text-decoration: none; }
+  .footer a:hover { color: var(--butter); text-decoration: underline; text-underline-offset: 4px; }
+
+  /* ── Reduced motion: no load animation, no continuous motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="header">
+  <div class="wrap header-row">
+    <a class="wordmark" href="#top" aria-label="Rooman Agent, back to top"><span class="wordmark-mark" aria-hidden="true"></span>Rooman Agent</a>
+    <nav class="nav" aria-label="Primary">
+      <ul>
+        <li><a href="#stage">Avatar</a></li>
+        <li><a href="#how">Agent builder</a></li>
+        <li><a href="#live">Live</a></li>
+        <li><a href="#use-cases">Use cases</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+    </nav>
+    <div class="header-actions">
+      <a class="signin" href="/signin">Sign in</a>
+      <a class="btn btn-rose btn-sm" href="/signup">Get started</a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="mobile-nav">Menu</button>
+    </div>
+  </div>
+  <nav class="mobile-nav wrap" id="mobile-nav" aria-label="Primary" hidden>
+    <ul>
+      <li><a href="#stage">Avatar</a></li>
+      <li><a href="#how">Agent builder</a></li>
+      <li><a href="#live">Live</a></li>
+      <li><a href="#use-cases">Use cases</a></li>
+      <li><a href="#faq">FAQ</a></li>
+      <li class="signin-m"><a href="/signin">Sign in</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main id="main">
+  <!-- ═════════ Hero ═════════ -->
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="wrap hero-grid">
+      <div>
+        <h1 id="hero-title">
+          <span class="line">Your face.</span>
+          <span class="line">Your voice.</span>
+          <span class="line">Your <span class="accent">agent.</span></span>
+        </h1>
+        <p class="lede">Upload a short video of yourself and get an AI avatar. Describe the agent you need, out loud. Then let it hold live conversations with your face and your voice.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-rose" href="/signup">Create your avatar</a>
+          <a class="btn btn-outline" href="#use-cases">See use cases</a>
+        </div>
+      </div>
+
+      <figure class="stage" id="stage" data-mode="orb" aria-label="Interactive preview of your AI agent">
+        <canvas id="gl" role="img" aria-label="A faceted rose orb with three orbiting rings. It ripples when your agent speaks."></canvas>
+
+        <div class="stack" id="stack">
+          <div class="stack-scene">
+            <div class="s-card portrait">
+              <img id="stack-portrait" alt="Illustrated placeholder portrait of your avatar: curly dark hair, warm skin tone, charcoal jacket." />
+              <span class="chip"><i aria-hidden="true"></i>Live</span>
+            </div>
+            <div class="s-card voice" role="img" aria-label="Your voice, shown as a waveform">
+              <p aria-hidden="true">Your voice</p>
+              <div class="wave" id="wave" aria-hidden="true"></div>
+            </div>
+            <div class="s-card note">
+              <strong>Not a recording</strong>
+              <p>Generated from a script, in a face that stays the same.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage-top">
+          <div class="seg" role="radiogroup" aria-label="Preview style" id="seg">
+            <button type="button" role="radio" aria-checked="true" data-mode="orb">Orb</button>
+            <button type="button" role="radio" aria-checked="false" data-mode="ring" tabindex="-1">Ring</button>
+            <button type="button" role="radio" aria-checked="false" data-mode="stack" tabindex="-1">Stack</button>
+          </div>
+          <span class="live-dot"><i aria-hidden="true"></i>Live preview</span>
+        </div>
+
+        <div class="stage-bottom">
+          <p class="caption" id="caption" aria-hidden="true"></p>
+          <button type="button" class="btn btn-outline btn-sm speak-btn" id="speak" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+            <span>Hear it speak</span>
+          </button>
+        </div>
+        <p class="sr-only" aria-live="polite" id="caption-live"></p>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ═════════ Steps ═════════ -->
+  <section class="section band" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 id="how-title">From a short video to a live agent</h2>
+        <p>Three steps, in this order. Each one builds on the last.</p>
+      </div>
+      <ol class="steps">
+        <li class="step tilt">
+          <span class="step-num" aria-hidden="true">1</span>
+          <h3><span class="sr-only">Step 1: </span>Upload a short video</h3>
+          <p>Film yourself facing the camera in good light. Rooman Agent builds your avatar from it.</p>
+          <svg class="step-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </li>
+        <li class="step tilt">
+          <span class="step-num" aria-hidden="true">2</span>
+          <h3><span class="sr-only">Step 2: </span>Describe your agent</h3>
+          <p>Say out loud what the agent should do. Your description becomes its instructions.</p>
+          <svg class="step-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </li>
+        <li class="step tilt" id="live">
+          <span class="step-num" aria-hidden="true">3</span>
+          <h3><span class="sr-only">Step 3: </span>Go live</h3>
+          <p>Your agent holds live conversations with your face and your voice.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ═════════ Use cases ═════════ -->
+  <section class="section" id="use-cases" aria-labelledby="cases-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 id="cases-title">Where your agent shows up</h2>
+        <p>One avatar, as many agents as you need. Give each one a job.</p>
+      </div>
+      <div class="cases">
+        <article class="case">
+          <div class="case-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg></div>
+          <h3>Sales calls</h3>
+          <p>Answer first questions and book demos while your team is on other calls.</p>
+        </article>
+        <article class="case">
+          <div class="case-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <h3>Customer support</h3>
+          <p>Handle the common questions and pass the tricky ones to a person, with context.</p>
+        </article>
+        <article class="case">
+          <div class="case-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg></div>
+          <h3>Training</h3>
+          <p>Give every learner the same clear walkthrough, and answer their questions in your voice.</p>
+        </article>
+        <article class="case">
+          <div class="case-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></div>
+          <h3>Onboarding</h3>
+          <p>Welcome new customers and walk them through setup, one step at a time.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ FAQ ═════════ -->
+  <section class="section band" id="faq" aria-labelledby="faq-title">
+    <div class="wrap faq-grid">
+      <div class="head">
+        <h2 id="faq-title">Questions, answered</h2>
+        <p>Something else on your mind? <a href="mailto:hello@rooman.com" style="color: var(--butter)">Write to us</a>.</p>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>How long should my video be?<span class="plus" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 1v12M1 7h12"/></svg></span></summary>
+          <div class="answer"><p>A short clip is enough. Face the camera, use good light, and talk naturally for a while so Rooman Agent can capture how you look and sound. You can record in the browser or upload a file.</p></div>
+        </details>
+        <details>
+          <summary>How natural does the avatar look?<span class="plus" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 1v12M1 7h12"/></svg></span></summary>
+          <div class="answer"><p>It is built from your own footage and lip-synced to each new script. Every generated frame is compared with your original face, and frames that drift are flagged or rejected, so your avatar keeps looking like you.</p></div>
+        </details>
+        <details>
+          <summary>Which languages can my agent speak?<span class="plus" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 1v12M1 7h12"/></svg></span></summary>
+          <div class="answer"><p>You choose the language when you describe your agent. Ask us which languages are available for your account today.</p></div>
+        </details>
+        <details>
+          <summary>What happens to my data, and who can use my face?<span class="plus" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 1v12M1 7h12"/></svg></span></summary>
+          <div class="answer"><p>Your avatar is only built after you give consent, and it is tied to your account. Write to us for the full details on how your video and voice are stored.</p></div>
+        </details>
+        <details>
+          <summary>How much does it cost?<span class="plus" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 1v12M1 7h12"/></svg></span></summary>
+          <div class="answer"><p>Pricing depends on how many minutes of video and live conversation you use. Get in touch and we will send you current plans.</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ Final band ═════════ -->
+  <section class="section final" aria-labelledby="final-title">
+    <div class="wrap final-inner">
+      <h2 id="final-title">Be in every conversation without being in every room.</h2>
+      <div><a class="btn btn-rose" href="/signup">Create your avatar</a></div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-row">
+    <span>© <span id="year">2026</span> Rooman Technologies</span>
+    <nav aria-label="Footer">
+      <ul>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#use-cases">Use cases</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="/signin">Sign in</a></li>
+        <li><a href="mailto:hello@rooman.com">hello@rooman.com</a></li>
+      </ul>
+    </nav>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ───────────────────────── Shared state ───────────────────────── */
+  const COLORS = { butter: 0xF7E7A6, rose: 0xF2A7B8, band: '#35425F' };
+  const LINE = "Hi, I'm your agent. I can answer questions, explain pricing, or book a demo, all in your voice.";
+  const reducedMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reduced = reducedMQ.matches;
+  let onScreen = true, raf = 0, last = 0, t = 1.2;
+
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('gl');
+  const captionEl = document.getElementById('caption');
+  const captionLive = document.getElementById('caption-live');
+  const speakBtn = document.getElementById('speak');
+  const stackScene = stage.querySelector('.stack-scene');
+  const wave = document.getElementById('wave');
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  /* ─────────── Mobile menu ─────────── */
+  const menuBtn = document.querySelector('.menu-btn');
+  const mobileNav = document.getElementById('mobile-nav');
+  menuBtn.addEventListener('click', () => {
+    const open = menuBtn.getAttribute('aria-expanded') !== 'true';
+    menuBtn.setAttribute('aria-expanded', String(open));
+    menuBtn.textContent = open ? 'Close' : 'Menu';
+    mobileNav.hidden = !open;
+  });
+  mobileNav.addEventListener('click', (e) => {
+    if (e.target.closest('a')) { menuBtn.setAttribute('aria-expanded', 'false'); menuBtn.textContent = 'Menu'; mobileNav.hidden = true; }
+  });
+
+  /* ─────────── Placeholder portrait (generated SVG) ───────────
+     Stylized: curly dark hair, warm skin tone, charcoal jacket. Swap PORTRAIT_SRC for a real photo URL later. */
+  function portraitSVG() {
+    const hair = '#24181A', skin = '#C58262', skinShade = '#A9694C', jacket = '#34363C', jacketLight = '#45474E';
+    const curls = [];
+    // Back volume around the head and down to the shoulders
+    for (let i = 0; i < 30; i++) {
+      const a = Math.PI * (0.92 + (i / 29) * 1.16);
+      const rx = 96 + (i % 3) * 8, ry = 104 + (i % 2) * 10;
+      curls.push(`<circle cx="${(200 + Math.cos(a) * rx).toFixed(1)}" cy="${(196 + Math.sin(a) * ry).toFixed(1)}" r="${30 + (i % 4) * 3}"/>`);
+    }
+    for (let i = 0; i < 8; i++) {
+      const side = i < 4 ? -1 : 1, k = i % 4;
+      curls.push(`<circle cx="${200 + side * (88 + (k % 2) * 12)}" cy="${222 + k * 22}" r="${26 - k * 2}"/>`);
+    }
+    // Front curls along the hairline
+    const front = [];
+    for (let i = 0; i < 9; i++) {
+      const a = Math.PI * (1.08 + (i / 8) * 0.84);
+      front.push(`<circle cx="${(200 + Math.cos(a) * 64).toFixed(1)}" cy="${(170 + Math.sin(a) * 58).toFixed(1)}" r="${17 + (i % 3) * 3}"/>`);
+    }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+      <rect width="400" height="400" fill="${COLORS.band}"/>
+      <g fill="${hair}">${curls.join('')}</g>
+      <path d="M52 400 C64 318 120 292 200 288 C280 292 336 318 348 400 Z" fill="${jacket}"/>
+      <path d="M168 292 L200 352 L232 292 Z" fill="#1F2024"/>
+      <path d="M150 298 L200 368 L172 296 Z" fill="${jacketLight}"/>
+      <path d="M250 298 L200 368 L228 296 Z" fill="${jacketLight}"/>
+      <path d="M178 236 L178 292 Q200 306 222 292 L222 236 Z" fill="${skinShade}"/>
+      <ellipse cx="200" cy="194" rx="60" ry="74" fill="${skin}"/>
+      <g fill="${hair}">${front.join('')}</g>
+      <path d="M168 178 q12 -8 24 -2" stroke="${hair}" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <path d="M208 176 q12 -6 24 2" stroke="${hair}" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <ellipse cx="180" cy="196" rx="5.5" ry="6.5" fill="${hair}"/>
+      <ellipse cx="220" cy="196" rx="5.5" ry="6.5" fill="${hair}"/>
+      <path d="M200 202 q-6 18 2 22" stroke="${skinShade}" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <path d="M184 238 q16 12 32 0" stroke="#7B3D34" stroke-width="5" fill="none" stroke-linecap="round"/>
+    </svg>`;
+  }
+  const PORTRAIT_SRC = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(portraitSVG());
+  document.getElementById('stack-portrait').src = PORTRAIT_SRC;
+
+  /* Waveform bars for the Stack card */
+  const WAVE_BARS = 26;
+  for (let i = 0; i < WAVE_BARS; i++) wave.appendChild(document.createElement('span'));
+  const waveBars = [...wave.children];
+
+  /* ─────────── Voice simulation ─────────── */
+  const SPEECH_SECONDS = LINE.length * 0.055;
+  let speaking = false, speechT = 0, speechStart = 0, voice = 0;
+
+  function envelope(t) {
+    // A fake voice: syllable bursts, short word gaps, and pauses at punctuation.
+    const ch = LINE[Math.min(LINE.length - 1, Math.floor((t / SPEECH_SECONDS) * LINE.length))];
+    if (ch === ',' || ch === '.') return 0.05;
+    if (ch === ' ') return 0.25;
+    const syll = Math.abs(Math.sin(t * 9.7)) * (0.65 + 0.35 * Math.sin(t * 23.1));
+    return Math.min(1, 0.3 + 0.7 * syll);
+  }
+
+  function setCaption(chars, cursor) {
+    captionEl.textContent = LINE.slice(0, chars);
+    if (cursor) { const c = document.createElement('span'); c.className = 'cursor'; captionEl.appendChild(c); }
+  }
+
+  function startSpeech() {
+    speaking = true; speechT = 0; speechStart = performance.now();
+    speakBtn.setAttribute('aria-pressed', 'true');
+    speakBtn.querySelector('span').textContent = 'Stop';
+    stage.classList.add('is-speaking');
+    captionEl.classList.add('is-on');
+    captionLive.textContent = LINE; // announced once, not character by character
+    if (reduced) { setCaption(LINE.length, false); voice = 0.55; requestRender(); }
+    else { setCaption(0, true); wake(); }
+  }
+  function stopSpeech(keepCaption) {
+    speaking = false;
+    speakBtn.setAttribute('aria-pressed', 'false');
+    speakBtn.querySelector('span').textContent = 'Hear it speak';
+    stage.classList.remove('is-speaking');
+    if (keepCaption) setCaption(LINE.length, false); else captionEl.classList.remove('is-on');
+    if (reduced) { voice = 0; requestRender(); }
+  }
+  speakBtn.addEventListener('click', () => (speaking ? stopSpeech(false) : startSpeech()));
+
+  /* ─────────── Pointer tilt ─────────── */
+  let tiltX = 0, tiltY = 0, targetX = 0, targetY = 0;
+  const hero = document.querySelector('.hero');
+  hero.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const r = stage.getBoundingClientRect();
+    const nx = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / (r.width * 0.9)));
+    const ny = Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height / 2)) / (r.height * 0.9)));
+    targetX = ny; targetY = nx;
+    if (reduced) { tiltX = targetX; tiltY = targetY; requestRender(); }
+  });
+  hero.addEventListener('pointerleave', () => { targetX = 0; targetY = 0; if (reduced) { tiltX = tiltY = 0; requestRender(); } });
+
+  /* ─────────── WebGL scene ─────────── */
+  function webglAvailable() {
+    try {
+      const c = document.createElement('canvas');
+      return !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl')));
+    } catch (e) { return false; }
+  }
+  const hasGL = typeof THREE !== 'undefined' && webglAvailable();
+
+  let renderer, scene, camera, root, orb, ring;
+
+  if (hasGL) {
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
+      camera.position.set(0, 0, 7.4);
+      root = new THREE.Group();
+      scene.add(root);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+      const key = new THREE.DirectionalLight(COLORS.butter, 0.85); key.position.set(3, 4, 5); scene.add(key);
+      const fill = new THREE.DirectionalLight(COLORS.rose, 0.45); fill.position.set(-4, -2, 2); scene.add(fill);
+
+      orb = buildOrb();
+      ring = buildRing();
+      root.add(orb.group, ring.group);
+    } catch (e) {
+      renderer = null;
+    }
+  }
+
+  function glowTexture() {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grd.addColorStop(0, 'rgba(242,167,184,0.55)');
+    grd.addColorStop(0.45, 'rgba(242,167,184,0.18)');
+    grd.addColorStop(1, 'rgba(242,167,184,0)');
+    g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(c);
+  }
+
+  function buildOrb() {
+    const group = new THREE.Group();
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), transparent: true, depthWrite: false, opacity: 0.8 }));
+    glow.scale.set(4.6, 4.6, 1);
+    group.add(glow);
+
+    const geo = new THREE.IcosahedronGeometry(1.15, 2);
+    const base = geo.attributes.position.array.slice();
+    const solid = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: COLORS.rose, flatShading: true, roughness: 0.55, metalness: 0.05 }));
+    const wire = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: COLORS.butter, wireframe: true, transparent: true, opacity: 0.32 }));
+    wire.scale.setScalar(1.004);
+    group.add(solid, wire);
+
+    const rings = [];
+    [[1.75, 1.2, 0.2], [2.0, 0.4, -0.6], [2.25, -0.7, 0.9]].forEach(([r, rx, rz], i) => {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(r, 0.007, 6, 180), new THREE.MeshBasicMaterial({ color: COLORS.butter, transparent: true, opacity: 0.42 }));
+      m.rotation.set(rx, 0, rz);
+      m.userData.speed = 0.08 + i * 0.03;
+      rings.push(m); group.add(m);
+    });
+
+    const N = 140, pts = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const r = 1.7 + Math.random() * 1.3, a = Math.random() * Math.PI * 2, b = Math.acos(2 * Math.random() - 1);
+      pts[i * 3] = r * Math.sin(b) * Math.cos(a); pts[i * 3 + 1] = r * Math.cos(b); pts[i * 3 + 2] = r * Math.sin(b) * Math.sin(a);
+    }
+    const pGeo = new THREE.BufferGeometry(); pGeo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+    const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: COLORS.butter, size: 0.035, transparent: true, opacity: 0.7, depthWrite: false }));
+    group.add(particles);
+
+    function update(t, dt, v) {
+      const pos = geo.attributes.position.array;
+      const amp = 0.022 + v * 0.17;
+      for (let i = 0; i < pos.length; i += 3) {
+        const x = base[i], y = base[i + 1], z = base[i + 2];
+        const len = Math.hypot(x, y, z), nx = x / len, ny = y / len, nz = z / len;
+        // Displacement is a function of the original position, so shared vertices move together (no cracks)
+        const w = Math.sin(nx * 3.1 + t * 1.25) * Math.sin(ny * 2.7 + t * 1.05) + 0.6 * Math.sin(nz * 4.3 - t * 1.6)
+                + v * 0.9 * Math.sin(ny * 7 + t * 18);
+        const d = 1 + amp * w;
+        pos[i] = x * d; pos[i + 1] = y * d; pos[i + 2] = z * d;
+      }
+      geo.attributes.position.needsUpdate = true;
+      solid.rotation.y += dt * 0.12; solid.rotation.x += dt * 0.04;
+      wire.rotation.copy(solid.rotation);
+      rings.forEach((m) => { m.rotation.z += dt * m.userData.speed; });
+      const p = pGeo.attributes.position.array;
+      for (let i = 1; i < p.length; i += 3) { p[i] += dt * 0.06; if (p[i] > 2.6) p[i] = -2.6; }
+      pGeo.attributes.position.needsUpdate = true;
+      glow.material.opacity = 0.65 + v * 0.35;
+      const gs = 4.4 + v * 0.9; glow.scale.set(gs, gs, 1);
+    }
+    return { group, update };
+  }
+
+  function buildRing() {
+    const group = new THREE.Group();
+    group.rotation.x = -0.32;
+
+    // Portrait sprite (circle-cropped texture from the generated SVG)
+    const c = document.createElement('canvas'); c.width = c.height = 512;
+    const tex = new THREE.CanvasTexture(c);
+    const img = new Image();
+    img.onload = () => {
+      const g = c.getContext('2d');
+      g.save(); g.beginPath(); g.arc(256, 256, 248, 0, Math.PI * 2); g.clip();
+      g.drawImage(img, 0, 0, 512, 512); g.restore();
+      g.lineWidth = 6; g.strokeStyle = '#F7E7A6'; g.beginPath(); g.arc(256, 256, 250, 0, Math.PI * 2); g.stroke();
+      tex.needsUpdate = true; requestRender();
+    };
+    img.src = PORTRAIT_SRC;
+    const portrait = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+    portrait.scale.set(1.85, 1.85, 1);
+    portrait.position.z = 0.01;
+    group.add(portrait);
+
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), transparent: true, depthWrite: false, opacity: 0.6 }));
+    glow.scale.set(4.4, 4.4, 1); glow.position.z = -0.4;
+    group.add(glow);
+
+    const COUNT = 64, R = 1.2;
+    const barGeo = new THREE.BoxGeometry(0.05, 1, 0.05); barGeo.translate(0, 0.5, 0);
+    const rose = new THREE.Color(COLORS.rose), butter = new THREE.Color(COLORS.butter);
+    const bars = [];
+    for (let i = 0; i < COUNT; i++) {
+      const a = (i / COUNT) * Math.PI * 2;
+      const m = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color: COLORS.rose }));
+      m.position.set(Math.cos(a) * R, Math.sin(a) * R, 0);
+      m.rotation.z = a - Math.PI / 2;
+      m.userData.a = a;
+      bars.push(m); group.add(m);
+    }
+
+    function update(t, dt, v) {
+      bars.forEach((m, i) => {
+        const a = m.userData.a;
+        const idle = 0.1 + 0.06 * (0.5 + 0.5 * Math.sin(t * 1.1 + i * 0.45));
+        const n = (0.5 + 0.5 * Math.sin(i * 12.99 + t * 9.3)) * (0.5 + 0.5 * Math.sin(i * 3.1 + t * 5.7));
+        m.scale.y = idle + v * (0.25 + 0.75 * n);
+        m.material.color.copy(rose).lerp(butter, 0.5 + 0.5 * Math.sin(a + t * 0.35));
+      });
+      glow.material.opacity = 0.45 + v * 0.45;
+    }
+    return { group, update };
+  }
+
+  /* ─────────── Modes ─────────── */
+  const LABELS = {
+    orb: 'A faceted rose orb with three orbiting rings. It ripples when your agent speaks.',
+    ring: 'Your avatar portrait in a circle, surrounded by 64 sound bars that move with its voice.',
+  };
+  const seg = document.getElementById('seg');
+  const segButtons = [...seg.querySelectorAll('[role="radio"]')];
+  let mode = 'orb';
+
+  function setMode(next, focus) {
+    if (!renderer && next !== 'stack') return;
+    mode = next;
+    stage.dataset.mode = next;
+    segButtons.forEach((b) => {
+      const on = b.dataset.mode === next;
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+      if (on && focus) b.focus();
+    });
+    if (renderer) {
+      orb.group.visible = next === 'orb';
+      ring.group.visible = next === 'ring';
+      if (LABELS[next]) canvas.setAttribute('aria-label', LABELS[next]);
+    }
+    requestRender();
+  }
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('[role="radio"]');
+    if (b && b.getAttribute('aria-disabled') !== 'true') setMode(b.dataset.mode);
+  });
+  seg.addEventListener('keydown', (e) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const enabled = segButtons.filter((b) => b.getAttribute('aria-disabled') !== 'true');
+    let i = enabled.findIndex((b) => b.dataset.mode === mode);
+    if (e.key === 'Home') i = 0;
+    else if (e.key === 'End') i = enabled.length - 1;
+    else i = (i + (e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1) + enabled.length) % enabled.length;
+    setMode(enabled[i].dataset.mode, true);
+  });
+
+
+  /* ─────────── Render loop (pauses off-screen and in hidden tabs) ─────────── */
+  const running = () => !reduced && onScreen && !document.hidden;
+
+  function resize() {
+    if (!renderer) return;
+    const r = stage.getBoundingClientRect();
+    renderer.setSize(r.width, r.height, false);
+    camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
+  }
+
+  function draw(dt) {
+    tiltX += (targetX - tiltX) * Math.min(1, dt * 4);
+    tiltY += (targetY - tiltY) * Math.min(1, dt * 4);
+
+    if (speaking && !reduced) {
+      speechT = (performance.now() - speechStart) / 1000;
+      const chars = Math.min(LINE.length, Math.floor((speechT / SPEECH_SECONDS) * LINE.length));
+      setCaption(chars, chars < LINE.length);
+      voice += (envelope(speechT) - voice) * Math.min(1, dt * 14);
+      if (speechT >= SPEECH_SECONDS + 0.3) stopSpeech(true);
+    } else if (!reduced) {
+      voice += (0 - voice) * Math.min(1, dt * 5);
+    }
+
+    if (mode === 'stack') {
+      stackScene.style.setProperty('--rx', (-tiltX * 9).toFixed(2) + 'deg');
+      stackScene.style.setProperty('--ry', (tiltY * 12).toFixed(2) + 'deg');
+      waveBars.forEach((b, i) => {
+        const idle = 18 + 10 * (0.5 + 0.5 * Math.sin(t * 1.4 + i * 0.6));
+        const n = (0.5 + 0.5 * Math.sin(i * 12.99 + t * 9.3)) * (0.5 + 0.5 * Math.sin(i * 2.3 + t * 6.1));
+        b.style.height = Math.min(100, idle + voice * 82 * n).toFixed(1) + '%';
+      });
+      return;
+    }
+    if (!renderer) return;
+    root.rotation.x = tiltX * 0.28;
+    root.rotation.y = tiltY * 0.38;
+    if (mode === 'orb') orb.update(t, dt, voice); else ring.update(t, dt, voice);
+    renderer.render(scene, camera);
+  }
+
+  function frame(now) {
+    raf = 0;
+    const dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+    last = now; t += dt;
+    draw(dt);
+    if (running()) raf = requestAnimationFrame(frame);
+  }
+  function wake() {
+    if (!raf && running()) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  }
+  // Static, single-frame render (reduced motion, or a change while paused)
+  function requestRender() {
+    if (raf) return;
+    if (running()) return wake();
+    requestAnimationFrame(() => draw(0));
+  }
+
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(([entry]) => { onScreen = entry.isIntersecting; onScreen ? wake() : null; }, { threshold: 0.05 }).observe(stage);
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+  reducedMQ.addEventListener('change', (e) => { reduced = e.matches; if (speaking) stopSpeech(true); requestRender(); wake(); });
+  if (window.ResizeObserver) new ResizeObserver(() => { resize(); requestRender(); }).observe(stage);
+  else window.addEventListener('resize', () => { resize(); requestRender(); });
+
+  // No WebGL: fall back to Stack and disable the 3D modes.
+  if (!renderer) {
+    canvas.remove();
+    segButtons.forEach((b) => { if (b.dataset.mode !== 'stack') { b.setAttribute('aria-disabled', 'true'); b.title = '3D preview needs WebGL'; } });
+    setMode('stack');
+  }
+
+  if (renderer) setMode(mode); // sets which 3D group is visible on first paint
+  resize();
+  requestRender();
+  wake();
+
+  /* ─────────── Step cards: gentle 3D tilt toward the pointer ─────────── */
+  document.querySelectorAll('.tilt').forEach((card) => {
+    card.addEventListener('pointermove', (e) => {
+      if (reduced || e.pointerType !== 'mouse') return;
+      const r = card.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      card.style.transform = `perspective(900px) rotateX(${(-y * 6).toFixed(2)}deg) rotateY(${(x * 8).toFixed(2)}deg) translateY(-4px)`;
+    });
+    card.addEventListener('pointerleave', () => { card.style.transform = ''; });
+  });
+})();
+</script>
+</body>
+</html>

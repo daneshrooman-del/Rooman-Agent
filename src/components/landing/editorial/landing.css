@@ -1,0 +1,338 @@
+/* Fonts (Inter, Plus Jakarta Sans) are loaded in index.html, shared with the app. */
+
+/* ============================================================
+   Landing page — editorial identity. Light-only, scoped to .landing
+   so the workspace app's tokens and buttons are untouched.
+   Re-pointing the Tailwind theme variables here means utilities like
+   bg-canvas / text-fg / border-line / font-display resolve to these
+   values inside the landing page only.
+   ============================================================ */
+.landing {
+  color-scheme: dark;
+
+  /* Palette: "Vibrant" — deep navy, violet → pink → orange gradients, glass. Matches the app. */
+  --l-ink: #F5F5FA;
+  --l-paper: #0B0B1A;
+  --l-sand: #10102A;
+  --l-band: #0B0B1A;
+  --l-band-fg: #F5F5FA;
+  --l-nav: rgb(11 11 26 / 0.72);
+  --l-card: rgb(24 24 52 / 0.72);
+  --l-accent: #A78BFA;
+  --l-accent-hover: #C4B5FD;
+  --l-on-accent: #FFFFFF;
+  --l-muted: #A6A6C8;
+  --l-subtle: #8282A8;
+  --l-rule: rgb(255 255 255 / 0.08);
+  --l-rule-strong: rgb(255 255 255 / 0.16);
+  --l-grad: linear-gradient(120deg, #8B5CF6 0%, #EC4899 55%, #F97316 100%);
+  --l-grad-text: linear-gradient(120deg, #C4B5FD 0%, #F9A8D4 50%, #FDBA74 100%);
+
+  /* The demo dialog uses the app's glass tokens — point them at the same palette */
+  --glass-bg: rgb(22 22 48 / 0.85);
+  --glass-strong-bg: rgb(22 22 48 / 0.92);
+  --glass-border: rgb(255 255 255 / 0.1);
+  --shadow-soft: 0 16px 40px -18px rgb(0 0 0 / 0.7);
+
+  --color-canvas: var(--l-paper);
+  --color-surface: var(--l-paper);
+  --color-surface-2: var(--l-sand);
+  --color-surface-3: #20203F;
+  --color-surface-4: #2A2A4D;
+  --color-fg: var(--l-ink);
+  --color-fg-muted: var(--l-muted);
+  --color-fg-subtle: var(--l-subtle);
+  --color-line: var(--l-rule);
+  --color-line-strong: var(--l-rule-strong);
+  --color-accent: var(--l-accent);
+  --color-on-accent: var(--l-on-accent);
+  --rgb-fg: 245 245 250;
+  --rgb-accent: 167 139 250;
+
+  --font-display: 'Plus Jakarta Sans', 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+
+  --l-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+.landing {
+  background:
+    radial-gradient(900px 560px at 12% -6%, rgb(139 92 246 / 0.30), transparent 70%),
+    radial-gradient(760px 520px at 100% 2%, rgb(236 72 153 / 0.20), transparent 70%),
+    radial-gradient(700px 520px at 60% 38%, rgb(249 115 22 / 0.07), transparent 70%),
+    var(--l-paper);
+  color: var(--l-ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  font-feature-settings: 'cv11';
+}
+
+.landing h1,
+.landing h2,
+.landing h3 {
+  font-family: var(--font-display);
+  color: inherit;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-optical-sizing: auto;
+}
+
+.landing ::selection {
+  background: rgb(167 139 250 / 0.45);
+  color: var(--l-ink);
+}
+
+.landing :focus-visible {
+  outline: 2px solid var(--l-ink);
+  outline-offset: 3px;
+  border-radius: 0;
+}
+
+.landing [id] { scroll-margin-top: 88px; }
+}
+
+@layer components {
+/* ── Layout ── */
+.l-wrap {
+  width: 100%;
+  max-width: 1360px;
+  margin-inline: auto;
+  padding-inline: 16px;
+}
+@media (min-width: 640px)  { .l-wrap { padding-inline: 32px; } }
+@media (min-width: 1024px) { .l-wrap { padding-inline: 48px; } }
+
+.l-section { padding-block: 96px; }
+@media (min-width: 1024px) { .l-section { padding-block: 152px; } }
+
+/* ── Type ── */
+.l-label {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.l-display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 0.94;
+  letter-spacing: -0.035em;
+  font-size: clamp(3.1rem, 1rem + 6.9vw, 7.25rem);
+}
+
+.l-h2 {
+  font-size: clamp(2.25rem, 1.4rem + 3.4vw, 4.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+.l-statement {
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 1.1rem + 2.6vw, 3.6rem);
+  line-height: 1.12;
+  letter-spacing: -0.022em;
+  font-weight: 400;
+}
+
+.l-lede {
+  font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
+  line-height: 1.6;
+  color: var(--l-muted);
+  max-width: 34em;
+}
+
+/* Yellow marker under a word — a hard-edged highlight, not a gradient fade */
+.l-mark {
+  background-image: var(--l-grad);
+  background-repeat: no-repeat;
+  background-size: 100% 0.14em;
+  background-position: 0 88%;
+  padding-inline: 0.04em;
+}
+
+/* ── Buttons: rectangular, 2px radius ── */
+.l-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 26px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border: 1px solid var(--l-ink);
+  transition: background-color 0.25s var(--l-ease), color 0.25s var(--l-ease), border-color 0.25s var(--l-ease);
+  white-space: nowrap;
+}
+.l-btn svg { transition: transform 0.35s var(--l-ease); }
+.l-btn:hover svg { transform: translateX(4px); }
+
+.l-btn-primary { background: var(--l-grad); background-size: 170% 100%; color: #FFFFFF; border-color: transparent; font-weight: 600; }
+.l-btn-primary:hover { background-position: 100% 50%; }
+
+.l-btn-secondary { background: rgb(255 255 255 / 0.04); color: var(--l-ink); border-color: var(--l-rule-strong); backdrop-filter: blur(12px); }
+.l-btn-secondary:hover { background: rgb(167 139 250 / 0.14); border-color: rgb(167 139 250 / 0.6); color: var(--l-ink); }
+
+.l-btn-accent { background: var(--l-grad); background-size: 170% 100%; color: #FFFFFF; border-color: transparent; font-weight: 600; }
+.l-btn-accent:hover { background-position: 100% 50%; }
+
+.l-btn-sm { min-height: 40px; padding: 0 18px; font-size: 14px; }
+
+/* ── Underline link ── */
+.l-link {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-size: 0% 1px;
+  background-position: 0 100%;
+  padding-bottom: 2px;
+  transition: background-size 0.45s var(--l-ease);
+}
+.l-link:hover,
+.group:hover .l-link { background-size: 100% 1px; }
+
+.l-link-static { background-size: 100% 1px; }
+.l-link-static:hover { background-size: 0% 1px; background-position: 100% 100%; }
+
+/* ── Photography ── */
+.l-photo {
+  position: relative;
+  overflow: hidden;
+  background: var(--l-sand);
+}
+.l-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 1.4s var(--l-ease), opacity 0.6s var(--l-ease);
+}
+.l-photo-zoom:hover img,
+.group:hover .l-photo-zoom img { transform: scale(1.035); }
+
+/* ── Reveal on scroll ── */
+.l-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.9s var(--l-ease), transform 1s var(--l-ease);
+}
+.l-reveal.is-in { opacity: 1; transform: none; }
+
+/* ── Accordion ── */
+.l-acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.45s var(--l-ease);
+}
+.l-acc-panel[data-open='true'] { grid-template-rows: 1fr; }
+.l-acc-panel > div { overflow: hidden; }
+
+.l-acc-icon { transition: transform 0.4s var(--l-ease); }
+[aria-expanded='true'] .l-acc-icon { transform: rotate(45deg); }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-reveal { opacity: 1; transform: none; transition: none; }
+  .l-photo img,
+  .l-btn svg,
+  .l-link,
+  .l-acc-panel,
+  .l-acc-icon { transition: none; }
+}
+
+/* Headline type: Plus Jakarta Sans 800, tight tracking. Unlayered so it wins over the
+   per-element tracking/weight utilities on headings. */
+.landing h1,
+.landing h2,
+.landing .font-display,
+.landing .l-display,
+.landing .l-h2,
+.landing .l-statement {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+
+/* Hero headline: each line flips in once on load */
+.l-flip { perspective: 900px; }
+.l-flip-line {
+  display: block;
+  transform-origin: 50% 100%;
+  backface-visibility: hidden;
+  animation: l-flip-in 0.85s var(--l-ease) both;
+}
+.l-flip-line:nth-child(2) { animation-delay: 0.12s; }
+.l-flip-line:nth-child(3) { animation-delay: 0.24s; }
+@keyframes l-flip-in {
+  from { opacity: 0; transform: rotateX(-85deg) translateY(0.15em); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .l-flip-line { animation: none; }
+}
+
+/* ── 3D depth ─────────────────────────────────────────────── */
+
+/* Tilt3D: tilts toward the pointer; children can sit forward with translateZ */
+.l-tilt {
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  transform: perspective(1100px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  transform-style: preserve-3d;
+  transition: transform 0.6s var(--l-ease);
+  will-change: transform;
+}
+.l-tilt:hover { transition-duration: 0.15s; }
+
+/* Big headlines: soft depth glow; gradient words via .l-grad-text */
+.landing .l-display { text-shadow: 0 18px 50px rgb(139 92 246 / 0.25); }
+.landing .l-h2 { text-shadow: 0 12px 36px rgb(139 92 246 / 0.18); }
+.landing .l-grad-text {
+  background: var(--l-grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+}
+
+/* Sections flip up into place as they scroll in */
+.landing .l-reveal {
+  transform: perspective(1200px) rotateX(14deg) translateY(30px);
+  transform-origin: 50% 0%;
+}
+.landing .l-reveal.is-in { transform: none; }
+
+/* Buttons glow and lift; press settles them back */
+.landing .l-btn-primary,
+.landing .l-btn-accent {
+  box-shadow: 0 12px 30px -12px rgb(236 72 153 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.22);
+  transition: transform 0.15s var(--l-ease), box-shadow 0.25s var(--l-ease), background-position 0.5s ease;
+}
+.landing .l-btn-primary:hover,
+.landing .l-btn-accent:hover { transform: translateY(-2px); box-shadow: 0 18px 40px -12px rgb(236 72 153 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.25); }
+.landing .l-btn-primary:active,
+.landing .l-btn-accent:active { transform: translateY(0) scale(0.98); }
+
+/* Glass header */
+.landing header.sticky { backdrop-filter: blur(16px) saturate(140%); }
+
+/* Cards in grids lift toward the viewer on hover */
+.landing .l-lift { transition: transform 0.45s var(--l-ease), box-shadow 0.45s var(--l-ease); transform-origin: 50% 100%; }
+.landing .l-lift:hover {
+  transform: perspective(900px) rotateX(6deg) translateY(-8px);
+  box-shadow: 0 30px 50px -28px rgb(139 92 246 / 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .l-tilt, .landing .l-lift:hover { transform: none !important; }
+  .landing .l-reveal { transform: none; }
+}
+@media (hover: none) {
+  .l-tilt { transform: none; }
+}

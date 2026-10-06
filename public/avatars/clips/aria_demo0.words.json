@@ -1,0 +1,65 @@
+{
+ "text": "Hey, welcome to our platform. Today I'll show you how it works.",
+ "words": [
+  {
+   "text": "Hey,",
+   "start": 0.0,
+   "end": 0.64
+  },
+  {
+   "text": "welcome",
+   "start": 1.08,
+   "end": 1.44
+  },
+  {
+   "text": "to",
+   "start": 1.44,
+   "end": 1.76
+  },
+  {
+   "text": "our",
+   "start": 1.76,
+   "end": 1.94
+  },
+  {
+   "text": "platform.",
+   "start": 1.94,
+   "end": 2.3
+  },
+  {
+   "text": "Today",
+   "start": 2.62,
+   "end": 2.86
+  },
+  {
+   "text": "I'll",
+   "start": 2.86,
+   "end": 3.26
+  },
+  {
+   "text": "show",
+   "start": 3.26,
+   "end": 3.4
+  },
+  {
+   "text": "you",
+   "start": 3.4,
+   "end": 3.6
+  },
+  {
+   "text": "how",
+   "start": 3.6,
+   "end": 3.82
+  },
+  {
+   "text": "it",
+   "start": 3.82,
+   "end": 4.0
+  },
+  {
+   "text": "works.",
+   "start": 4.0,
+   "end": 4.28
+  }
+ ]
+}

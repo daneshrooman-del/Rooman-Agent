@@ -1,0 +1,57 @@
+{
+  "avatars": {
+    "shalya": {
+      "image": "/avatars/avatar_shalya.jpg",
+      "voice": "en_US-lessac-high",
+      "pose_style": 4,
+      "expression": 1.1,
+      "ref_exp_scale": 0.3,
+      "motion_gain": 1,
+      "person": "a woman in her forties with curly shoulder-length brown hair, a grey tweed blazer over a black top"
+    },
+    "aria": {
+      "image": "/avatars/avatar_aria.jpg",
+      "voice": "en_GB-jenny_dioco-medium",
+      "pose_style": 12,
+      "expression": 1.1,
+      "ref_exp_scale": 0.3,
+      "motion_gain": 1,
+      "person": "a young woman with straight shoulder-length brown hair and a navy blue blouse"
+    },
+    "dev": {
+      "image": "/avatars/avatar_dev.jpg",
+      "voice": "en_US-ryan-high",
+      "pose_style": 20,
+      "expression": 1.1,
+      "ref_exp_scale": 0.3,
+      "motion_gain": 1,
+      "person": "a man in his thirties with short black hair and a trimmed beard, a grey blazer over a dark blue shirt"
+    }
+  },
+  "demoScripts": [
+    "Hey, welcome to our platform. Today I'll show you how it works.",
+    "Quick update for the sales team: our new pricing goes live on Monday. Here are the three changes you need to know.",
+    "Welcome aboard! I'm your onboarding guide. In the next two minutes, we'll set up your account together."
+  ],
+  "lines": {
+    "shalya": {
+      "intro": "Hi, I'm Shalya, a digital twin made from a two minute video. I can present, answer questions, and talk with your customers live.",
+      "demo0": "Hey, welcome to our platform. Today I'll show you how it works.",
+      "demo1": "Quick update for the sales team: our new pricing goes live on Monday. Here are the three changes you need to know.",
+      "demo2": "Welcome aboard! I'm your onboarding guide. In the next two minutes, we'll set up your account together."
+    },
+    "aria": {
+      "intro": "Hello, I'm Aria. Give me a script, and I'll turn it into a finished, on-brand video in minutes. No camera, no reshoots.",
+      "demo0": "Hey, welcome to our platform. Today I'll show you how it works.",
+      "demo1": "Quick update for the sales team: our new pricing goes live on Monday. Here are the three changes you need to know.",
+      "demo2": "Welcome aboard! I'm your onboarding guide. In the next two minutes, we'll set up your account together."
+    },
+    "dev": {
+      "intro": "Hey, I'm Dev. I can walk your team through product updates, onboarding, and technical demos, in English or Hindi.",
+      "demo0": "Hey, welcome to our platform. Today I'll show you how it works.",
+      "demo1": "Quick update for the sales team: our new pricing goes live on Monday. Here are the three changes you need to know.",
+      "demo2": "Welcome aboard! I'm your onboarding guide. In the next two minutes, we'll set up your account together."
+    }
+  },
+  "presenterPrompt": "A realistic video of {person}, speaking directly to the camera in a bright modern office. The presenter talks naturally and warmly, with subtle head movements that follow the speech, small nods, natural blinking, gentle eyebrow movement and a friendly expression; the shoulders and chest move slightly with breathing. Eye contact with the camera. The camera is steady and the softly blurred background stays still."
+}

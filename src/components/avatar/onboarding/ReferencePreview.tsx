@@ -61,15 +61,15 @@ export function ReferencePreview({ source, onReplace, onRemove }: { source: Refe
               aria-label={`Preview of ${source.file.name}`}
             />
           ) : (
-            <div className="flex size-full flex-col items-center justify-center gap-2 text-center text-[13px] text-fg-muted">
-              <Film className="size-6 text-fg-subtle" aria-hidden />
+            <div className="flex size-full flex-col items-center justify-center gap-2 text-center text-[13px] text-white/65">
+              <Film className="size-6 text-white/40" aria-hidden />
               {unplayable ? 'Your browser can’t preview this format, but it can still be uploaded.' : 'Preparing preview…'}
             </div>
           )
         ) : (
-          <AvatarPreview avatar={{ hue: 258, name: 'Sample footage' }} framing="stage" rounded="rounded-none" className="size-full">
+          <AvatarPreview avatar={{ hue: 210, name: 'Sample footage' }} framing="stage" rounded="rounded-none" className="size-full">
             <div className="absolute left-3 top-3">
-              <Badge tone="warning" className="bg-black/50 backdrop-blur-md">Sample footage · demo</Badge>
+              <Badge tone="warning" className="!bg-surface/85 backdrop-blur-md">Sample footage · demo</Badge>
             </div>
           </AvatarPreview>
         )}
@@ -77,7 +77,7 @@ export function ReferencePreview({ source, onReplace, onRemove }: { source: Refe
 
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] border border-line-strong bg-white/[0.04]">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] border border-line-strong bg-fg/[0.04]">
             <Film className="size-[18px] text-fg-muted" aria-hidden />
           </span>
           <div className="min-w-0">

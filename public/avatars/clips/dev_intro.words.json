@@ -1,0 +1,100 @@
+{
+ "text": "Hey, I'm Dev. I can walk your team through product updates, onboarding, and technical demos, in English or Hindi.",
+ "words": [
+  {
+   "text": "Hey,",
+   "start": 0.0,
+   "end": 0.26
+  },
+  {
+   "text": "I'm",
+   "start": 0.42,
+   "end": 0.7
+  },
+  {
+   "text": "Dev.",
+   "start": 0.7,
+   "end": 0.9
+  },
+  {
+   "text": "I",
+   "start": 1.12,
+   "end": 1.16
+  },
+  {
+   "text": "can",
+   "start": 1.16,
+   "end": 1.28
+  },
+  {
+   "text": "walk",
+   "start": 1.28,
+   "end": 1.54
+  },
+  {
+   "text": "your",
+   "start": 1.54,
+   "end": 1.76
+  },
+  {
+   "text": "team",
+   "start": 1.76,
+   "end": 2.0
+  },
+  {
+   "text": "through",
+   "start": 2.0,
+   "end": 2.26
+  },
+  {
+   "text": "product",
+   "start": 2.26,
+   "end": 2.64
+  },
+  {
+   "text": "updates,",
+   "start": 2.64,
+   "end": 3.1
+  },
+  {
+   "text": "onboarding,",
+   "start": 3.4,
+   "end": 4.02
+  },
+  {
+   "text": "and",
+   "start": 4.18,
+   "end": 4.34
+  },
+  {
+   "text": "technical",
+   "start": 4.34,
+   "end": 4.8
+  },
+  {
+   "text": "demos,",
+   "start": 4.8,
+   "end": 5.22
+  },
+  {
+   "text": "in",
+   "start": 5.54,
+   "end": 5.74
+  },
+  {
+   "text": "English",
+   "start": 5.74,
+   "end": 6.06
+  },
+  {
+   "text": "or",
+   "start": 6.06,
+   "end": 6.42
+  },
+  {
+   "text": "Hindi.",
+   "start": 6.42,
+   "end": 6.64
+  }
+ ]
+}

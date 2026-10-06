@@ -14,7 +14,7 @@ interface CardDef {
 }
 
 function Visual({ kind, hue }: { kind: CardDef['visual']; hue: number }) {
-  const c = `hsl(${hue} 85% 72%)`
+  const c = `hsl(${hue} 80% 64%)`
   if (kind === 'identity')
     return (
       <svg viewBox="0 0 200 120" className="size-full" aria-hidden>
@@ -29,7 +29,7 @@ function Visual({ kind, hue }: { kind: CardDef['visual']; hue: number }) {
     return (
       <svg viewBox="0 0 200 120" className="size-full" aria-hidden>
         {[0, 1, 2].map((i) => (
-          <rect key={i} x={104 + i * 16} y={26 + i * 10} width="64" height="40" rx="6" fill="#0b0b10" stroke={c} strokeOpacity={0.2 + i * 0.2} />
+          <rect key={i} x={104 + i * 16} y={26 + i * 10} width="64" height="40" rx="6" className="fill-surface" stroke={c} strokeOpacity={0.2 + i * 0.2} />
         ))}
         <path d="M150 58l10 6-10 6z" fill={c} fillOpacity="0.8" />
       </svg>
@@ -52,7 +52,7 @@ function Visual({ kind, hue }: { kind: CardDef['visual']; hue: number }) {
         [120, 60],
         [168, 86],
       ].map(([x, y], i) => (
-        <rect key={i} x={x - 9} y={y - 9} width="18" height="18" rx="5" fill="#0b0b10" stroke={c} strokeOpacity={0.3 + i * 0.15} />
+        <rect key={i} x={x - 9} y={y - 9} width="18" height="18" rx="5" className="fill-surface" stroke={c} strokeOpacity={0.3 + i * 0.15} />
       ))}
     </svg>
   )
@@ -61,10 +61,10 @@ function Visual({ kind, hue }: { kind: CardDef['visual']; hue: number }) {
 export function CreateCards({ avatar }: { avatar: Avatar | undefined }) {
   const q = avatar ? `?avatar=${avatar.id}` : ''
   const cards: CardDef[] = [
-    { step: '01', layer: 'Identity', title: 'Create Avatar', description: 'Turn a short video of yourself into a reusable digital twin.', to: '/avatars/new', icon: UserRoundPlus, hue: 258, visual: 'identity' },
-    { step: '02', layer: 'Content', title: 'Create Video', description: `Direct ${avatar?.name ?? 'your avatar'} to present, greet or demonstrate — in any language.`, to: `/create${q}`, icon: Clapperboard, hue: 232, visual: 'frames' },
-    { step: '03', layer: 'Interaction', title: 'Go Live', description: 'Hold a real-time conversation with the same avatar, face to face.', to: `/live${q}`, icon: Radio, hue: 290, visual: 'wave' },
-    { step: '04', layer: 'Workforce', title: 'Build Agent', description: 'Describe a job and deploy an agent that works through voice, video and API.', to: `/agents/new${q}`, icon: Bot, hue: 210, visual: 'nodes' },
+    { step: '01', layer: 'Identity', title: 'Create Avatar', description: 'Turn a short video of yourself into a reusable digital twin.', to: '/avatars/new', icon: UserRoundPlus, hue: 212, visual: 'identity' },
+    { step: '02', layer: 'Content', title: 'Create Video', description: `Direct ${avatar?.name ?? 'your avatar'} to present, greet or demonstrate — in any language.`, to: `/create${q}`, icon: Clapperboard, hue: 226, visual: 'frames' },
+    { step: '03', layer: 'Interaction', title: 'Go Live', description: 'Hold a real-time conversation with the same avatar, face to face.', to: `/live${q}`, icon: Radio, hue: 199, visual: 'wave' },
+    { step: '04', layer: 'Workforce', title: 'Build Agent', description: 'Describe a job and deploy an agent that works through voice, video and API.', to: `/agents/new${q}`, icon: Bot, hue: 205, visual: 'nodes' },
   ]
   return (
     <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -72,7 +72,7 @@ export function CreateCards({ avatar }: { avatar: Avatar | undefined }) {
         <li key={c.title} className="animate-fade-up" style={{ animationDelay: `${i * 70}ms` }}>
           <Link
             to={c.to}
-            className="group relative flex h-full min-h-[228px] flex-col overflow-hidden rounded-panel border border-line bg-surface p-6 shadow-soft transition-[transform,border-color,box-shadow] duration-300 ease-out-soft hover:-translate-y-1 hover:border-line-strong hover:shadow-[0_30px_70px_-30px_rgb(0_0_0/0.9),0_0_0_1px_rgb(143_124_255/0.16)]"
+            className="group relative flex h-full min-h-[228px] flex-col overflow-hidden rounded-panel border border-line bg-surface p-6 shadow-soft transition-[transform,border-color,box-shadow] duration-300 ease-out-soft hover:-translate-y-1 hover:border-line-strong hover:shadow-[0_30px_70px_-30px_rgb(var(--rgb-shadow)/0.5),0_0_0_1px_rgb(var(--rgb-accent)/0.16)]"
           >
             <div
               aria-hidden
@@ -83,7 +83,7 @@ export function CreateCards({ avatar }: { avatar: Avatar | undefined }) {
               <Visual kind={c.visual} hue={c.hue} />
             </div>
             <div className="relative flex items-center justify-between">
-              <span className="flex size-11 items-center justify-center rounded-[14px] border border-line-strong bg-white/[0.05] text-fg">
+              <span className="flex size-11 items-center justify-center rounded-[14px] border border-line-strong bg-fg/[0.05] text-fg">
                 <c.icon className="size-5" aria-hidden />
               </span>
             </div>

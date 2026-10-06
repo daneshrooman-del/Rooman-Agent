@@ -40,7 +40,8 @@ export const AvatarPreview = memo(function AvatarPreview({
   children,
 }: AvatarPreviewProps) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '')
-  const hue = avatar?.hue ?? 255
+  // keep each avatar's own tint, but within the theme's blues (195–230)
+  const hue = 195 + (((avatar?.hue ?? 210) % 36) + 36) % 36
   const h2 = (hue + 40) % 360
 
   const figureBox =
@@ -156,7 +157,7 @@ export function AvatarChip({ avatar, size = 32, className }: { avatar: AvatarLik
   const hue = avatar?.hue ?? 255
   return (
     <span
-      className={cn('relative inline-flex shrink-0 overflow-hidden rounded-full ring-1 ring-white/10', className)}
+      className={cn('relative inline-flex shrink-0 overflow-hidden rounded-full ring-1 ring-fg/10', className)}
       style={{ width: size, height: size, background: `radial-gradient(90% 90% at 50% 0%, hsl(${hue} 70% 45% / 0.7), #0b0b10 75%)` }}
       aria-hidden
     >

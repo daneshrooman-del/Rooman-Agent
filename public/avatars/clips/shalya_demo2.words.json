@@ -1,0 +1,90 @@
+{
+ "text": "Welcome aboard! I'm your onboarding guide. In the next two minutes, we'll set up your account together.",
+ "words": [
+  {
+   "text": "Welcome",
+   "start": 0.0,
+   "end": 0.52
+  },
+  {
+   "text": "aboard!",
+   "start": 0.52,
+   "end": 1.0
+  },
+  {
+   "text": "I'm",
+   "start": 1.4,
+   "end": 1.58
+  },
+  {
+   "text": "your",
+   "start": 1.58,
+   "end": 1.68
+  },
+  {
+   "text": "onboarding",
+   "start": 1.68,
+   "end": 2.26
+  },
+  {
+   "text": "guide.",
+   "start": 2.26,
+   "end": 2.54
+  },
+  {
+   "text": "In",
+   "start": 2.94,
+   "end": 3.04
+  },
+  {
+   "text": "the",
+   "start": 3.04,
+   "end": 3.14
+  },
+  {
+   "text": "next",
+   "start": 3.14,
+   "end": 3.4
+  },
+  {
+   "text": "two",
+   "start": 3.4,
+   "end": 3.6
+  },
+  {
+   "text": "minutes,",
+   "start": 3.6,
+   "end": 3.92
+  },
+  {
+   "text": "we'll",
+   "start": 4.38,
+   "end": 4.6
+  },
+  {
+   "text": "set",
+   "start": 4.6,
+   "end": 4.78
+  },
+  {
+   "text": "up",
+   "start": 4.78,
+   "end": 4.9
+  },
+  {
+   "text": "your",
+   "start": 4.9,
+   "end": 5.08
+  },
+  {
+   "text": "account",
+   "start": 5.08,
+   "end": 5.34
+  },
+  {
+   "text": "together.",
+   "start": 5.34,
+   "end": 5.66
+  }
+ ]
+}

@@ -134,7 +134,7 @@ export function ProcessingStep({
 
   return (
     <section className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16">
-      <TrainingStage avatar={{ hue: avatar?.hue ?? 258, name }} scanning={!done} alive className="mx-auto w-full max-w-[340px] sm:max-w-[520px] animate-fade-up">
+      <TrainingStage avatar={{ hue: avatar?.hue ?? 210, name }} scanning={!done} alive className="mx-auto w-full max-w-[340px] sm:max-w-[520px] animate-fade-up">
         <div className="absolute inset-x-5 bottom-5 flex items-end justify-between gap-3 sm:inset-x-7 sm:bottom-7">
           <div className="glass-strong min-w-0 rounded-[12px] px-3 py-2">
             <p className="text-[11px] uppercase tracking-[0.14em] text-fg-subtle">{done ? 'Complete' : `Stage ${stageIndex + 1} of ${stages.length}`}</p>
@@ -164,7 +164,7 @@ export function ProcessingStep({
           <ProgressBar value={job.progress} label="Avatar training progress" className="mt-4 h-2" />
         </div>
 
-        <div className="mt-6 rounded-panel border border-line bg-white/[0.02] p-2">
+        <div className="mt-6 rounded-panel border border-line bg-fg/[0.02] p-2">
           <StageList stages={stages} current={job.state === 'idle' ? 0 : stageIndex} done={done} />
         </div>
         {engineNote && (
