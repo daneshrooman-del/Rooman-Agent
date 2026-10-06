@@ -29,3 +29,13 @@ resizes the generated face and mask-blends it in. The fix depends on which one l
 ## Not done yet
 Choosing between the fixes above — waits for the profile numbers. A lighter renderer for the live
 path remains the fallback if neither gets near 25 fps.
+
+## Follow-up: second benchmark run, profiler merged into the benchmark cell
+- Re-run on a fresh session reproduced the result: 1500 frames in 128.4 s (**11.7 fps**), 200 in
+  26.3 s, peak GPU memory 10.2 GiB.
+- The profile cell never ran: the user's notebook copy was imported before it existed, and the
+  Kaggle session had stopped, so pasting the cell alone would have failed (MuseTalk, weights and the
+  prepared avatar are gone with the session).
+- Fix: the separate profile cells are removed; the main benchmark cell now runs the
+  timer-instrumented copy of MuseTalk's script directly (same frames, plus a `PROFILE` line per
+  clip) and prints the CPU core count. One Run All gives totals, per-stage busy times and GPU memory.
