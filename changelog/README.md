@@ -20,3 +20,4 @@ which files were touched, and how it was verified.
 | 013 | [MuseTalk benchmark notebook](013-musetalk-benchmark-notebook.md) | 5a |
 | 014 | [MuseTalk without OpenMMLab](014-musetalk-without-openmmlab.md) | 5a |
 | 015 | [MuseTalk T4 result + profiler](015-musetalk-t4-result-and-profile.md) | 5a |
+| 016 | [Agent video track with lip sync (placeholder)](016-avatar-video-track.md) | 5b |

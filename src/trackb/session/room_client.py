@@ -47,6 +47,7 @@ logger = structlog.get_logger(__name__)
 DEFAULT_SAMPLE_RATE = 16_000
 DEFAULT_NUM_CHANNELS = 1
 _PUBLISHED_TRACK_NAME = "trackb-agent-voice"
+_PUBLISHED_VIDEO_TRACK_NAME = "trackb-agent-face"
 _BYTES_PER_SAMPLE = 2  # PCM16
 TEXT_CHAT_TOPIC = "lk-chat-topic"
 """Matches the frontend's `room.localParticipant.sendText(text, {topic: 'lk-chat-topic'})` --
@@ -149,8 +150,16 @@ class LiveKitRoomClient:
         audio_stream_factory: Callable[..., AsyncIterator[Any]] | None = None,
         audio_source_factory: Callable[[int, int], Any] | None = None,
         local_audio_track_factory: Callable[[str, Any], Any] | None = None,
+        avatar: Any | None = None,
+        local_video_track_factory: Callable[[str, Any], Any] | None = None,
     ) -> None:
         self._room = room
+        self._avatar = avatar
+        """Optional `trackb.avatar.AvatarAVOutput`. When set, speech is published through it as
+        lip-synced audio + video instead of audio only (see `start_media`/`publish_audio`)."""
+        self._local_video_track_factory: Callable[[str, Any], Any] = (
+            local_video_track_factory or rtc.LocalVideoTrack.create_video_track
+        )
         self._sample_rate = sample_rate
         self._num_channels = num_channels
         self._participant_wait_timeout_seconds = participant_wait_timeout_seconds
@@ -236,8 +245,20 @@ class LiveKitRoomClient:
             if aclose is not None:
                 await aclose()
 
+    async def start_media(self) -> None:
+        """Publish the agent's tracks up front. With an avatar this also publishes the video track
+        and starts its idle animation, so the face is visible as soon as the caller joins rather
+        than appearing with the first reply. Without one it's a no-op (audio is published lazily
+        on first speech, as before)."""
+        if self._avatar is None:
+            return
+        await self._ensure_audio_published()
+
     async def _ensure_audio_published(self) -> None:
         if self._published:
+            return
+        if self._avatar is not None:
+            await self._publish_avatar_tracks()
             return
         self._audio_source = self._audio_source_factory(self._sample_rate, self._num_channels)
         track = self._local_audio_track_factory(_PUBLISHED_TRACK_NAME, self._audio_source)
@@ -250,8 +271,31 @@ class LiveKitRoomClient:
             track_sid=self._local_track_sid,
         )
 
+    async def _publish_avatar_tracks(self) -> None:
+        assert self._avatar is not None
+        avatar = self._avatar
+        audio_track = self._local_audio_track_factory(_PUBLISHED_TRACK_NAME, avatar.audio_source)
+        video_track = self._local_video_track_factory(
+            _PUBLISHED_VIDEO_TRACK_NAME, avatar.video_source
+        )
+        audio_pub = await self._room.local_participant.publish_track(audio_track)
+        await self._room.local_participant.publish_track(
+            video_track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_CAMERA)
+        )
+        self._local_track_sid = getattr(audio_pub, "sid", None)
+        self._published = True
+        self._avatar.start()
+        logger.info(
+            "room_client_avatar_published",
+            room=getattr(self._room, "name", None),
+            track_sid=self._local_track_sid,
+        )
+
     async def publish_audio(self, audio: bytes) -> None:
         await self._ensure_audio_published()
+        if self._avatar is not None:
+            await self._avatar.say(audio)
+            return
         assert self._audio_source is not None
         samples_per_channel = len(audio) // (_BYTES_PER_SAMPLE * self._num_channels)
         frame = rtc.AudioFrame(
@@ -263,6 +307,8 @@ class LiveKitRoomClient:
         await self._audio_source.capture_frame(frame)
 
     async def disconnect(self) -> None:
+        if self._avatar is not None:
+            await self._avatar.aclose()
         if self._audio_source is not None:
             aclose = getattr(self._audio_source, "aclose", None)
             if aclose is not None:

@@ -79,3 +79,11 @@ def test_worker_options_executor_type_from_settings() -> None:
         _worker_options(Settings(worker_job_executor="process")).job_executor_type
         == JobExecutorType.PROCESS
     )
+
+
+def test_build_avatar_from_settings() -> None:
+    from trackb.session.entrypoint import _build_avatar
+
+    assert _build_avatar(Settings()) is None
+    with pytest.raises(ValueError, match="unknown"):
+        _build_avatar(Settings(avatar_renderer="nope"))

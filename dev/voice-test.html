@@ -17,6 +17,7 @@
   .msg { padding:6px 10px; border-radius:6px; margin:4px 0; }
   .agent { background:var(--agent); } .user { background:var(--user); } .sys { color:var(--muted); font-size:13px; }
   #text { flex:1; min-width:0; }
+  #face video { width:100%; max-width:360px; aspect-ratio:1; border-radius:12px; background:#000; display:block; margin:0 auto 12px; }
 </style>
 </head>
 <body>
@@ -27,6 +28,7 @@
   <button id="stop" disabled>Leave</button>
 </div>
 <div class="row"><span id="status">idle</span></div>
+<div id="face" hidden></div>
 <div id="log"></div>
 <form class="row" id="form"><input id="text" placeholder="…or type a message" disabled><button disabled id="send">Send</button></form>
 <div id="audio"></div>
@@ -58,6 +60,10 @@ $('start').onclick = async () => {
     room = new LK.Room({ adaptiveStream: true });
     room.on(LK.RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === 'audio') { $('audio').appendChild(track.attach()); line('sys', 'agent audio track subscribed'); }
+      if (track.kind === 'video') {
+        const v = track.attach(); v.muted = true; v.playsInline = true;
+        $('face').replaceChildren(v); $('face').hidden = false; line('sys', 'agent video track subscribed');
+      }
     });
     room.on(LK.RoomEvent.ParticipantConnected, (p) => line('sys', `joined: ${p.identity}`));
     room.on(LK.RoomEvent.ParticipantDisconnected, (p) => line('sys', `left: ${p.identity}`));

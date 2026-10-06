@@ -36,6 +36,7 @@ from typing import Protocol, runtime_checkable
 import structlog
 from livekit.agents import JobContext, JobExecutorType, WorkerOptions, cli
 
+from trackb.avatar import AmplitudeFaceRenderer, AvatarAVOutput
 from trackb.config import Settings, get_settings
 from trackb.contracts.models import AgentSpec
 from trackb.intake.graph import IntakeGraph, IntakeStepResult
@@ -109,6 +110,15 @@ def _build_stt(settings: Settings, models: WarmModels | None = None) -> SpeechTo
     return build_endpointed_stt(
         whisper, min_silence_ms=settings.stt_min_silence_ms, vad_session=models.vad_session
     )
+
+
+def _build_avatar(settings: Settings) -> AvatarAVOutput | None:
+    """The live video avatar selected by `Settings.avatar_renderer`, or `None` for audio only."""
+    if settings.avatar_renderer == "none":
+        return None
+    if settings.avatar_renderer == "placeholder":
+        return AvatarAVOutput(AmplitudeFaceRenderer(fps=settings.avatar_fps))
+    raise ValueError(f"unknown TRACKB_AVATAR_RENDERER: {settings.avatar_renderer!r}")
 
 
 def _make_tts_fn(provider: TTSProvider, voice_id: str | None) -> TextToSpeechFn:
@@ -353,7 +363,9 @@ async def intake_entrypoint(ctx: JobContext) -> None:
     owner = _resolve_owner(ctx)
 
     room_client = LiveKitRoomClient(
-        ctx.room, participant_wait_timeout_seconds=settings.participant_wait_timeout_seconds
+        ctx.room,
+        participant_wait_timeout_seconds=settings.participant_wait_timeout_seconds,
+        avatar=_build_avatar(settings),
     )
     models = warm_models(ctx)
     stt = _build_stt(settings, models)

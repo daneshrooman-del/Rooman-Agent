@@ -19,11 +19,13 @@ class _FakeLocalParticipant:
     def __init__(self, identity: str = "agent-local") -> None:
         self.identity = identity
         self.published_tracks: list[Any] = []
+        self.published_options: list[Any] = []
         self.published_transcriptions: list[Any] = []
 
-    async def publish_track(self, track: Any) -> _FakeTrackPublication:
+    async def publish_track(self, track: Any, options: Any = None) -> _FakeTrackPublication:
         publication = _FakeTrackPublication(sid=f"TR_local_{len(self.published_tracks)}")
         self.published_tracks.append(track)
+        self.published_options.append(options)
         return publication
 
     async def publish_transcription(self, transcription: Any) -> None:
@@ -301,3 +303,71 @@ async def test_publish_transcription_calls_local_participant_publish_transcripti
     assert transcription.segments[0].id == "seg-1"
     assert transcription.segments[0].text == "hello there"
     assert transcription.segments[0].final is True
+
+
+class _FakeAvatar:
+    def __init__(self) -> None:
+        self.audio_source = object()
+        self.video_source = object()
+        self.started = False
+        self.said: list[bytes] = []
+        self.closed = False
+
+    def start(self) -> None:
+        self.started = True
+
+    async def say(self, audio: bytes) -> None:
+        self.said.append(audio)
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def _avatar_client(room: _FakeRoom, avatar: _FakeAvatar) -> LiveKitRoomClient:
+    return LiveKitRoomClient(
+        room,  # type: ignore[arg-type]
+        avatar=avatar,
+        local_audio_track_factory=lambda name, src: ("audio", name, src),
+        local_video_track_factory=lambda name, src: ("video", name, src),
+    )
+
+
+@pytest.mark.asyncio
+async def test_start_media_publishes_avatar_audio_and_camera_video_and_starts_idle() -> None:
+    room = _FakeRoom()
+    avatar = _FakeAvatar()
+    client = _avatar_client(room, avatar)
+
+    await client.start_media()
+    await client.start_media()  # idempotent
+
+    tracks = room.local_participant.published_tracks
+    assert [t[0] for t in tracks] == ["audio", "video"]
+    assert tracks[0][2] is avatar.audio_source and tracks[1][2] is avatar.video_source
+    assert room.local_participant.published_options[1].source == rtc.TrackSource.SOURCE_CAMERA
+    assert avatar.started
+    assert client.local_track_sid == "TR_local_0"  # transcripts attach to the audio track
+
+
+@pytest.mark.asyncio
+async def test_publish_audio_goes_through_the_avatar_and_disconnect_closes_it() -> None:
+    room = _FakeRoom()
+    avatar = _FakeAvatar()
+    client = _avatar_client(room, avatar)
+
+    await client.publish_audio(b"pcm")
+    await client.disconnect()
+
+    assert avatar.said == [b"pcm"]
+    assert len(room.local_participant.published_tracks) == 2
+    assert avatar.closed and room.disconnect_called
+
+
+@pytest.mark.asyncio
+async def test_start_media_without_avatar_is_a_noop() -> None:
+    room = _FakeRoom()
+    client = LiveKitRoomClient(room)  # type: ignore[arg-type]
+
+    await client.start_media()
+
+    assert room.local_participant.published_tracks == []

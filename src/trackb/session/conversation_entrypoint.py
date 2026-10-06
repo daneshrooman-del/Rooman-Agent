@@ -39,6 +39,7 @@ from trackb.session import cpu_compat
 from trackb.session.concurrency import SessionConcurrencyGuard
 from trackb.session.entrypoint import (
     UtteranceEmittingWorker,
+    _build_avatar,
     _build_stt,
     _build_tts_provider,
     _make_tts_fn,
@@ -189,7 +190,9 @@ async def conversation_entrypoint(ctx: JobContext) -> None:
     session_id = _resolve_session_id(ctx, agent_id)  # type: ignore[arg-type]  # agent_id is not None here
 
     room_client = LiveKitRoomClient(
-        ctx.room, participant_wait_timeout_seconds=settings.participant_wait_timeout_seconds
+        ctx.room,
+        participant_wait_timeout_seconds=settings.participant_wait_timeout_seconds,
+        avatar=_build_avatar(settings),
     )
     models = warm_models(ctx)
     stt = _build_stt(settings, models)

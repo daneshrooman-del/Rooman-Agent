@@ -116,6 +116,10 @@ class SessionWorker:
 
         await self._guard.run(_do_join, session_id=self._session_id)
         self._joined = True
+
+        start_media = getattr(self._room_client, "start_media", None)
+        if start_media is not None:
+            await start_media()
         logger.info("session_start", session_id=self._session_id)
 
         self._audio_pump_task = asyncio.create_task(self._pump_audio_in())

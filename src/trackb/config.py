@@ -45,6 +45,12 @@ class Settings(BaseSettings):
 
     avatar_service_url: str = "http://localhost:8100"
 
+    avatar_renderer: str = "none"
+    """Live talking-head video for the agent: "none" (default, audio only) or "placeholder" (a
+    CPU-drawn face whose mouth follows loudness, `trackb.avatar.placeholder`). A GPU lip-sync
+    renderer (MuseTalk) will be another value here."""
+    avatar_fps: int = 25
+
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     llm_provider: str = "mock"
