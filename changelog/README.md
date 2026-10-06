@@ -22,3 +22,4 @@ which files were touched, and how it was verified.
 | 015 | [MuseTalk T4 result + profiler](015-musetalk-t4-result-and-profile.md) | 5a |
 | 016 | [Agent video track with lip sync (placeholder)](016-avatar-video-track.md) | 5b |
 | 017 | [MuseTalk live renderer](017-musetalk-renderer.md) | 5c |
+| 018 | [MuseTalk real-time on 2×T4 + TAESD, enabled in worker](018-musetalk-realtime-decision.md) | 5c |
