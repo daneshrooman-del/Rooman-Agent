@@ -189,12 +189,12 @@ async def conversation_entrypoint(ctx: JobContext) -> None:
 
     session_id = _resolve_session_id(ctx, agent_id)  # type: ignore[arg-type]  # agent_id is not None here
 
+    models = warm_models(ctx)
     room_client = LiveKitRoomClient(
         ctx.room,
         participant_wait_timeout_seconds=settings.participant_wait_timeout_seconds,
-        avatar=_build_avatar(settings),
+        avatar=_build_avatar(settings, models),
     )
-    models = warm_models(ctx)
     stt = _build_stt(settings, models)
     guard = SessionConcurrencyGuard(settings=settings)
     tts_provider = _build_tts_provider(settings, models)

@@ -33,6 +33,7 @@ class WarmModels:
     whisper: Any | None = None
     piper_voice: Any | None = None
     vad_session: Any | None = None
+    face_renderer: Any | None = None
 
 
 _cache_lock = threading.Lock()
@@ -63,6 +64,10 @@ def load_models(settings: Settings) -> WarmModels:
 
     models.vad_session = get_vad_model().session
 
+    if settings.avatar_renderer == "musetalk":
+        # Tens of seconds and several GB of VRAM: load once per worker, shared by sessions.
+        models.face_renderer = build_musetalk_renderer(settings)
+
     if settings.llm_provider == "gemini":
         # The google-genai SDK takes ~2.7 s to import (measured on Kaggle); done lazily it blocks
         # the event loop during the first turn of the first session.
@@ -84,6 +89,25 @@ def shared_models(settings: Settings) -> WarmModels:
         if _cached is None:
             _cached = load_models(settings)
         return _cached
+
+
+def build_musetalk_renderer(settings: Settings) -> Any:
+    from trackb.avatar.musetalk import MuseTalkRenderer
+
+    if not settings.musetalk_dir or not settings.musetalk_avatar_dir:
+        raise ValueError(
+            "TRACKB_AVATAR_RENDERER=musetalk needs TRACKB_MUSETALK_DIR and "
+            "TRACKB_MUSETALK_AVATAR_DIR"
+        )
+    return MuseTalkRenderer.load(
+        musetalk_dir=settings.musetalk_dir,
+        avatar_dir=settings.musetalk_avatar_dir,
+        devices=settings.musetalk_devices,
+        decoder=settings.musetalk_decoder,
+        fps=settings.avatar_fps,
+        batch_size=settings.musetalk_batch_size,
+        output_size=settings.avatar_output_size,
+    )
 
 
 def prewarm(proc: Any) -> None:

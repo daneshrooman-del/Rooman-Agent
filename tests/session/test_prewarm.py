@@ -87,3 +87,22 @@ def test_build_avatar_from_settings() -> None:
     assert _build_avatar(Settings()) is None
     with pytest.raises(ValueError, match="unknown"):
         _build_avatar(Settings(avatar_renderer="nope"))
+
+
+@pytest.mark.asyncio
+async def test_build_avatar_musetalk_uses_the_shared_prewarmed_renderer() -> None:
+    from trackb.avatar import AmplitudeFaceRenderer
+    from trackb.session.entrypoint import _build_avatar
+
+    shared = AmplitudeFaceRenderer(width=32, height=32)  # stands in for a loaded MuseTalkRenderer
+    out = _build_avatar(Settings(avatar_renderer="musetalk"), WarmModels(face_renderer=shared))
+
+    assert out is not None and out._renderer is shared
+    await out.aclose()
+
+
+def test_musetalk_renderer_requires_its_paths() -> None:
+    from trackb.session.prewarm import build_musetalk_renderer
+
+    with pytest.raises(ValueError, match="TRACKB_MUSETALK_DIR"):
+        build_musetalk_renderer(Settings(avatar_renderer="musetalk"))

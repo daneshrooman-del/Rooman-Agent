@@ -46,10 +46,21 @@ class Settings(BaseSettings):
     avatar_service_url: str = "http://localhost:8100"
 
     avatar_renderer: str = "none"
-    """Live talking-head video for the agent: "none" (default, audio only) or "placeholder" (a
-    CPU-drawn face whose mouth follows loudness, `trackb.avatar.placeholder`). A GPU lip-sync
-    renderer (MuseTalk) will be another value here."""
+    """Live talking-head video for the agent: "none" (default, audio only), "placeholder" (a
+    CPU-drawn face whose mouth follows loudness, `trackb.avatar.placeholder`) or "musetalk"
+    (GPU lip-sync, `trackb.avatar.musetalk`; needs the `musetalk_*` settings below)."""
     avatar_fps: int = 25
+    avatar_output_size: int = 512
+    """Side of the square video the MuseTalk renderer streams (a head crop of the avatar video)."""
+    musetalk_dir: str = ""
+    """MuseTalk checkout with its `models/` downloaded (see kaggle/musetalk_benchmark.ipynb)."""
+    musetalk_avatar_dir: str = ""
+    """An avatar prepared by MuseTalk, e.g. `<musetalk_dir>/results/v15/avatars/avator_1`."""
+    musetalk_devices: list[str] = ["cuda:0"]
+    """One MuseTalk copy per listed GPU; batches alternate between them (JSON list in env)."""
+    musetalk_decoder: str = "sd-vae"
+    """"sd-vae" (MuseTalk's own decoder) or "taesd" (tiny decoder for the same latents)."""
+    musetalk_batch_size: int = 8
 
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
 

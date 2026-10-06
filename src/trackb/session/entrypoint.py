@@ -48,7 +48,7 @@ from trackb.provisioning.orchestrator import run_intake_session
 from trackb.session import cpu_compat
 from trackb.session.concurrency import SessionConcurrencyGuard
 from trackb.session.livekit_admin import session_id_from_room_name
-from trackb.session.prewarm import WarmModels, prewarm, warm_models
+from trackb.session.prewarm import WarmModels, build_musetalk_renderer, prewarm, warm_models
 from trackb.session.redis_store import RedisSessionStore
 from trackb.session.room_client import LiveKitRoomClient
 from trackb.session.worker import (
@@ -112,12 +112,18 @@ def _build_stt(settings: Settings, models: WarmModels | None = None) -> SpeechTo
     )
 
 
-def _build_avatar(settings: Settings) -> AvatarAVOutput | None:
-    """The live video avatar selected by `Settings.avatar_renderer`, or `None` for audio only."""
+def _build_avatar(settings: Settings, models: WarmModels | None = None) -> AvatarAVOutput | None:
+    """The live video avatar selected by `Settings.avatar_renderer`, or `None` for audio only.
+
+    The output (LiveKit sources, idle loop) is per session; a MuseTalk renderer is shared, taken
+    from the prewarmed models when available (see `trackb.session.prewarm`)."""
     if settings.avatar_renderer == "none":
         return None
     if settings.avatar_renderer == "placeholder":
         return AvatarAVOutput(AmplitudeFaceRenderer(fps=settings.avatar_fps))
+    if settings.avatar_renderer == "musetalk":
+        renderer = models.face_renderer if models is not None else None
+        return AvatarAVOutput(renderer or build_musetalk_renderer(settings))
     raise ValueError(f"unknown TRACKB_AVATAR_RENDERER: {settings.avatar_renderer!r}")
 
 
@@ -362,12 +368,12 @@ async def intake_entrypoint(ctx: JobContext) -> None:
     session_id = _resolve_session_id(ctx)
     owner = _resolve_owner(ctx)
 
+    models = warm_models(ctx)
     room_client = LiveKitRoomClient(
         ctx.room,
         participant_wait_timeout_seconds=settings.participant_wait_timeout_seconds,
-        avatar=_build_avatar(settings),
+        avatar=_build_avatar(settings, models),
     )
-    models = warm_models(ctx)
     stt = _build_stt(settings, models)
     guard = SessionConcurrencyGuard(settings=settings)
     tts_provider = _build_tts_provider(settings, models)
