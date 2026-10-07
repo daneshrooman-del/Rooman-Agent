@@ -43,3 +43,14 @@ On Kaggle (GPU, full 11.7 s clip, onnxruntime-gpu on Python 3.13).
 path under `/kaggle/input/...`. The photo cell now checks the path first and, if it doesn't exist,
 says so and lists the image files that are under `/kaggle/input` (or that no dataset is attached).
 The user also reported the session terminating — cause not yet known (see next entry).
+
+## Follow-up: Kaggle session terminated while running the photo cell
+Running the LivePortrait cell ended the whole Kaggle session (no log survives a session end).
+Likely causes: RAM (a worker from an earlier run still holding MuseTalk in RAM and on both GPUs,
+plus LivePortrait) and/or installing `onnxruntime-gpu` alongside the CPU `onnxruntime` that Piper
+and faster-whisper already use. Changes:
+- photo cell stops a still-running worker first and no longer installs `onnxruntime-gpu`
+  (LivePortrait only uses onnxruntime for one-off face detection; CPU is enough);
+- **workaround that avoids LivePortrait on Kaggle entirely**: the clip is rendered on the dev PC
+  (CPU, ~1 h for the 11.7 s clip), uploaded to the Kaggle dataset, and used via `AVATAR_VIDEO`
+  with `PHOTO` left empty.
