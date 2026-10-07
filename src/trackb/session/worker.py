@@ -302,9 +302,9 @@ class SessionWorker:
 
         A producer task synthesizes sentence N+1 while sentence N is being published, buffered
         at most `_SPEAK_PIPELINE_DEPTH` clips ahead so a slow room can't make it run away.
-        The reply is one transcript segment that grows as each sentence's audio is published
-        (interim), then is marked final -- so the transcript shows one line per reply and only
-        ever contains what was actually spoken. If this call is cancelled (e.g. on barge-in) or
+        The reply is one transcript segment that grows as each sentence starts playing
+        (interim), then is marked final -- so the transcript shows one line per reply, in step
+        with the voice. If this call is cancelled (e.g. on barge-in) or
         publishing fails, the producer is cancelled too and the source stream is closed.
         """
         if self._tts is None:
@@ -338,11 +338,22 @@ class SessionWorker:
                 if isinstance(item, BaseException):
                     raise item
                 sentence, audio = item
-                await self._room_client.publish_audio(audio)
                 spoken.append(sentence)
-                await self._publish_agent_transcription(
-                    " ".join(spoken), segment_id=segment_id, final=False
-                )
+                # Show each sentence as it *starts* playing. With an avatar, publish_audio returns
+                # only once the clip has been paced out (≈ its whole duration), so captioning
+                # after it put the text seconds behind the voice. Needs the agent's track to
+                # exist; the very first sentence of an audio-only session publishes it lazily,
+                # so that one is captioned right after instead.
+                caption_first = getattr(self._room_client, "local_track_sid", None) is not None
+                if caption_first:
+                    await self._publish_agent_transcription(
+                        " ".join(spoken), segment_id=segment_id, final=False
+                    )
+                await self._room_client.publish_audio(audio)
+                if not caption_first:
+                    await self._publish_agent_transcription(
+                        " ".join(spoken), segment_id=segment_id, final=False
+                    )
             if spoken:
                 await self._publish_agent_transcription(
                     " ".join(spoken), segment_id=segment_id, final=True

@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any
 
 import pytest
 
@@ -579,3 +580,34 @@ async def test_failing_turn_handler_apologises_and_keeps_the_session_alive() -> 
     assert not worker._transcript_pump_task.done()  # pump survived
 
     await worker.leave()
+
+
+@pytest.mark.asyncio
+async def test_sentence_caption_goes_out_as_its_audio_starts_once_the_track_exists() -> None:
+    room = _FakeRoomClient(frames=[])
+    room.local_track_sid = "TR_avatar"  # avatar publishes its tracks at session start
+    order: list[str] = []
+    original_audio, original_tr = room.publish_audio, room.publish_transcription
+
+    async def audio(a: bytes) -> None:
+        order.append(f"audio:{a.decode()}")
+        await original_audio(a)
+
+    async def transcription(**kw: Any) -> None:
+        order.append(f"text:{kw['text']}|{kw['final']}")
+        await original_tr(**kw)
+
+    room.publish_audio = audio  # type: ignore[method-assign]
+    room.publish_transcription = transcription  # type: ignore[method-assign]
+
+    async def fake_tts(text: str) -> bytes:
+        return text.encode()
+
+    worker = SessionWorker(session_id="s-cap", room_client=room, stt=_FakeSTT(), tts=fake_tts)
+    await worker.speak_stream(_sentences("One.", "Two."))
+
+    assert order == [
+        "text:One.|False", "audio:One.",
+        "text:One. Two.|False", "audio:Two.",
+        "text:One. Two.|True",
+    ]
