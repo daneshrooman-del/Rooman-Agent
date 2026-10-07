@@ -37,3 +37,9 @@ the user. Only animate photos you have rights and consent for.
 
 ## Not yet verified
 On Kaggle (GPU, full 11.7 s clip, onnxruntime-gpu on Python 3.13).
+
+## Follow-up: first Kaggle attempt
+`PHOTO` was set to the dataset's web address (`www.kaggle.com/datasets/...`) instead of the file's
+path under `/kaggle/input/...`. The photo cell now checks the path first and, if it doesn't exist,
+says so and lists the image files that are under `/kaggle/input` (or that no dataset is attached).
+The user also reported the session terminating — cause not yet known (see next entry).
