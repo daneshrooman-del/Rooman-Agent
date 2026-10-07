@@ -44,3 +44,6 @@ The Kaggle session had restarted (idle timeout), which wipes installed packages,
 re-running only clone/config/worker cells then started a worker in an empty environment. The worker
 cell now checks the essential packages (and the MuseTalk ones when `AVATAR="musetalk"`) and Redis
 before starting, and says "the session was reset — Run All" instead of launching a doomed worker.
+- First version of that check ran in the notebook kernel and wrongly reported `trackb` missing:
+  the kernel started before `pip install -e`, and editable installs are only discovered when
+  Python starts. The check now runs in a fresh Python with the worker's env (as the worker does).
