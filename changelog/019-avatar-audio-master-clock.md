@@ -32,3 +32,9 @@
 - Live (local LiveKit, placeholder face): lip-sync lag **−20 / −10 ms** (unchanged), 20 fps,
   `avatar_said … repeated=0 skipped=0`.
 - **Not yet re-tested with MuseTalk on Kaggle.**
+
+## Follow-up: worker exited on `ModuleNotFoundError: structlog`
+The Kaggle session had restarted (idle timeout), which wipes installed packages, Redis and models;
+re-running only clone/config/worker cells then started a worker in an empty environment. The worker
+cell now checks the essential packages (and the MuseTalk ones when `AVATAR="musetalk"`) and Redis
+before starting, and says "the session was reset — Run All" instead of launching a doomed worker.
