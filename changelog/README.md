@@ -24,3 +24,4 @@ which files were touched, and how it was verified.
 | 017 | [MuseTalk live renderer](017-musetalk-renderer.md) | 5c |
 | 018 | [MuseTalk real-time on 2×T4 + TAESD, enabled in worker](018-musetalk-realtime-decision.md) | 5c |
 | 019 | [Avatar audio as master clock](019-avatar-audio-master-clock.md) | 5c |
+| 020 | [Full-body framing, reference video setting, 20 fps](020-avatar-framing-reference-video.md) | 5c |

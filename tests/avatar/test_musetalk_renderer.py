@@ -136,3 +136,20 @@ def test_idle_frame_and_head_crop() -> None:
 def test_needs_an_engine() -> None:
     with pytest.raises(ValueError, match="engine"):
         _renderer([])
+
+
+def test_full_framing_keeps_the_whole_frame_at_the_source_aspect_ratio() -> None:
+    frames = [np.full((768, 576, 3), 50, dtype=np.uint8)]  # portrait, like MuseTalk's sun.mp4
+    r = MuseTalkRenderer(
+        frames=frames, coords=[(200, 100, 380, 300)], masks=[np.zeros((768, 576), np.uint8)],
+        mask_coords=[(0, 0, 576, 768)], latents=[np.array([[0]])], engines=[_Engine("gpu0")],
+        features_fn=lambda s, f: [], blend_fn=_blend, output_size=512, framing="full",
+    )
+    assert (r.width, r.height) == (384, 512)  # 576x768 scaled to 512 tall, width even
+    assert r.idle_frame(0).shape == (512, 384, 4)
+    with pytest.raises(ValueError, match="framing"):
+        MuseTalkRenderer(
+            frames=frames, coords=[(0, 0, 1, 1)], masks=frames, mask_coords=[(0, 0, 1, 1)],
+            latents=[0], engines=[_Engine("g")], features_fn=lambda s, f: [], blend_fn=_blend,
+            framing="waist",
+        )

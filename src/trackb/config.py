@@ -51,7 +51,10 @@ class Settings(BaseSettings):
     (GPU lip-sync, `trackb.avatar.musetalk`; needs the `musetalk_*` settings below)."""
     avatar_fps: int = 25
     avatar_output_size: int = 512
-    """Side of the square video the MuseTalk renderer streams (a head crop of the avatar video)."""
+    """Height of the video the MuseTalk renderer streams (with "head" framing, also its width)."""
+    avatar_framing: str = "head"
+    """"head": square crop around the face. "full": the whole reference frame (body and hands
+    visible) -- for a reference video with natural gestures."""
     musetalk_dir: str = ""
     """MuseTalk checkout with its `models/` downloaded (see kaggle/musetalk_benchmark.ipynb)."""
     musetalk_avatar_dir: str = ""

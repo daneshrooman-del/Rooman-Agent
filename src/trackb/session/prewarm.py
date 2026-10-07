@@ -107,6 +107,7 @@ def build_musetalk_renderer(settings: Settings) -> Any:
         fps=settings.avatar_fps,
         batch_size=settings.musetalk_batch_size,
         output_size=settings.avatar_output_size,
+        framing=settings.avatar_framing,
     )
 
 

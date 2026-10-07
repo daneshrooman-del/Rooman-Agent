@@ -9,8 +9,9 @@ blending runs at 49 fps. Real time needs 25 fps. So this renderer:
 - can decode with TAESD (`decoder="taesd"`), a tiny decoder for the same SD latents, instead of
   the full SD VAE decoder;
 - yields frames as each batch finishes, so time-to-first-frame is one batch, not the whole clip;
-- crops the output to a square around the head (`output_size`) instead of streaming the whole
-  704x1216 portrait frame.
+- streams either a square crop around the head (`framing="head"`) or the whole reference frame
+  scaled to `output_size` tall (`framing="full"`, keeps the body and hands visible -- use it with
+  a reference video that has natural gestures; MuseTalk itself only regenerates the mouth).
 
 The avatar must already be prepared by MuseTalk (its `realtime_inference.py` with
 `preparation: True` writes `results/v15/avatars/<id>/`: `latents.pt`, `coords.pkl`,
@@ -87,6 +88,7 @@ class MuseTalkRenderer:
         fps: int = 25,
         batch_size: int = 8,
         output_size: int = 512,
+        framing: str = "head",
         stack_fn: Callable[[Sequence[Any]], Any] | None = None,
         cat_fn: Callable[[Sequence[Any]], Any] | None = None,
         blend_workers: int = 3,
@@ -108,7 +110,15 @@ class MuseTalkRenderer:
         self._cat = cat_fn or _torch_cat
         self._samples_per_frame = TTS_SAMPLE_RATE // fps
         h, w = self._frames[0].shape[:2]
-        self._crop = head_crop_box(self._coords, w, h)
+        if framing == "head":
+            self._crop = head_crop_box(self._coords, w, h)
+            self._out_w = self._out_h = output_size
+        elif framing == "full":
+            self._crop = (0, 0, w, h)
+            self._out_h = output_size
+            self._out_w = max(2, round(output_size * w / h / 2) * 2)  # even, for the encoder
+        else:
+            raise ValueError(f"unknown framing {framing!r} (head | full)")
         self._lookahead = lookahead
         self._cursor = 0  # avatar frame index; continues across clips so body motion is smooth
         # One thread per GPU (each engine's kernels run while the others are busy) + blenders.
@@ -127,11 +137,11 @@ class MuseTalkRenderer:
 
     @property
     def width(self) -> int:
-        return self._out
+        return self._out_w
 
     @property
     def height(self) -> int:
-        return self._out
+        return self._out_h
 
     def idle_frame(self, index: int) -> Frame:
         return self._finish(self._frames[index % len(self._frames)])
@@ -210,7 +220,7 @@ class MuseTalkRenderer:
 
         x1, y1, x2, y2 = self._crop
         square = cv2.resize(
-            frame_bgr[y1:y2, x1:x2], (self._out, self._out), interpolation=cv2.INTER_AREA
+            frame_bgr[y1:y2, x1:x2], (self._out_w, self._out_h), interpolation=cv2.INTER_AREA
         )
         return cv2.cvtColor(square, cv2.COLOR_BGR2RGBA)
 
@@ -227,6 +237,7 @@ class MuseTalkRenderer:
         fps: int = 25,
         batch_size: int = 8,
         output_size: int = 512,
+        framing: str = "head",
     ) -> MuseTalkRenderer:
         import cv2
         import torch
@@ -291,6 +302,7 @@ class MuseTalkRenderer:
             fps=fps,
             batch_size=batch_size,
             output_size=output_size,
+            framing=framing,
         )
 
 
