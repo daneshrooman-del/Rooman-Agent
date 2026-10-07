@@ -44,11 +44,15 @@ class AvatarAVOutput:
         sample_rate: int = TTS_SAMPLE_RATE,
         num_channels: int = 1,
         queue_ms: int = 100,
+        preroll_frames: int = 8,
         audio_source: Any | None = None,
         video_source: Any | None = None,
         synchronizer_factory: Callable[..., Any] | None = None,
     ) -> None:
         self._renderer = renderer
+        self._preroll_frames = preroll_frames
+        """Frames buffered before a reply starts playing: one MuseTalk batch (8) costs no extra
+        latency (a batch arrives at once) and absorbs the gap until the next batch."""
         self._sample_rate = sample_rate
         self._num_channels = num_channels
         self._bytes_per_frame = (sample_rate // renderer.fps) * _BYTES_PER_SAMPLE * num_channels
@@ -73,24 +77,76 @@ class AvatarAVOutput:
 
     async def say(self, audio: bytes) -> None:
         """Push one clip of speech with its rendered frames; returns once all of it is queued
-        (≈ `queue_ms` before it finishes playing), so the next clip can follow seamlessly."""
+        (≈ `queue_ms` before it finishes playing), so the next clip can follow seamlessly.
+
+        Audio is the master clock: every `1/fps` window of audio is pushed on schedule whether
+        or not its frame is ready. A GPU renderer yields frames in bursts (one batch at a time)
+        and only slightly faster than real time on a T4, so gating audio on frames -- as this
+        first did -- drained the short audio queue between batches and broke up the voice. Now
+        frames are produced into a buffer by a background task; playback starts after
+        `preroll_frames` are buffered; a window whose frame isn't ready re-shows the previous
+        frame, and frames that arrive after their window are skipped, so the lips stay in sync
+        instead of drifting late.
+        """
         async with self._say_lock:
             if self._busy == 0:
                 self._sync.reset()  # don't let the fps controller "catch up" after an idle gap
             self._busy += 1
+            windows = -(-len(audio) // self._bytes_per_frame)
+            ready: dict[int, Frame] = {}
+            produced = asyncio.Event()  # set on every new frame and when the renderer ends
+            finished = False
+
+            async def produce() -> None:
+                nonlocal finished
+                try:
+                    index = 0
+                    async for frame in self._renderer.render(audio):
+                        ready[index] = frame
+                        index += 1
+                        produced.set()
+                finally:
+                    finished = True
+                    produced.set()
+
+            producer = asyncio.create_task(produce())
+            repeated = skipped = 0
+            loop = asyncio.get_running_loop()
+            started = loop.time()
             try:
-                index = 0
-                async for frame in self._renderer.render(audio):
+                while not finished and len(ready) < min(self._preroll_frames, windows):
+                    produced.clear()
+                    await produced.wait()
+                preroll_ms = (loop.time() - started) * 1000
+                last: Frame | None = None
+                for window in range(windows):
+                    frame = ready.pop(window, None)
+                    for stale in [i for i in ready if i < window]:
+                        del ready[stale]
+                        skipped += 1
+                    if frame is None:
+                        if last is None:
+                            last = self._renderer.idle_frame(0)
+                        frame = last
+                        repeated += 1
+                    last = frame
+                    start = window * self._bytes_per_frame
                     await self._sync.push(_video_frame(frame))
-                    start = index * self._bytes_per_frame
-                    chunk = audio[start : start + self._bytes_per_frame]
-                    if chunk:
-                        await self._sync.push(self._audio_frame(chunk))
-                    index += 1
-                rest = audio[index * self._bytes_per_frame :]
-                if rest:
-                    await self._sync.push(self._audio_frame(rest))
+                    await self._sync.push(
+                        self._audio_frame(audio[start : start + self._bytes_per_frame])
+                    )
+                logger.info(
+                    "avatar_said",
+                    frames=windows,
+                    repeated=repeated,
+                    skipped=skipped,
+                    preroll_ms=round(preroll_ms),
+                )
             finally:
+                if not producer.done():
+                    producer.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await producer
                 task = asyncio.create_task(self._release_after_playout())
                 self._playout_tasks.add(task)
                 task.add_done_callback(self._playout_tasks.discard)
