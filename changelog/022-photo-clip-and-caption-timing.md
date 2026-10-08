@@ -23,3 +23,9 @@ audio-only session, whose track is published lazily, is still captioned right af
 
 ## Verified
 `pytest` → 273 passed; `ruff` clean.
+
+## Follow-up: notebook robustness
+- Config cell: `FRAMING`/`AVATAR_FPS` fall back to `"full"`/`"20"` if a line went missing from
+  the avatar cell (a pasted snippet had replaced it → `NameError: AVATAR_FPS`).
+- Worker cell: if Redis isn't running (its cell skipped), it now starts Redis itself instead of
+  stopping with a misleading "session was reset" message; it only fails if Redis can't start.
