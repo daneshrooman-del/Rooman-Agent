@@ -27,3 +27,4 @@ which files were touched, and how it was verified.
 | 020 | [Full-body framing, reference video setting, 20 fps](020-avatar-framing-reference-video.md) | 5c |
 | 021 | [Avatar from a single photo](021-avatar-from-photo.md) | 5c |
 | 022 | [Photo clip rendered; captions in step with voice](022-photo-clip-and-caption-timing.md) | 5c |
+| 023 | [Livelier photo clip, own Kaggle notebook](023-lively-photo-clip-notebook.md) | 5c |

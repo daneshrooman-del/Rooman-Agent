@@ -1,0 +1,30 @@
+# 023 — Livelier photo avatar: chained talking drivers, own Kaggle notebook
+
+**Plan step:** 5c (avatar quality)
+
+## Why
+With the 022 clip the live avatar looked too static. Cause: the clip used LivePortrait's
+*calmest* driver (d13) at 0.8 motion strength, and MuseTalk only moves the mouth. The user wanted
+it livelier and rendered on Kaggle (the 2 h CPU render was too slow).
+
+## What we did
+- `kaggle/musetalk_patches/photo_to_clip.py`: renders the photo once per driving clip and joins
+  the parts. Default drivers **d20, d19, d13** (talking, calm, calm-with-head-motion) at full
+  strength (`--multiplier 1.0`) → ~27 s of nods, tilts, blinks and expression changes, so the
+  loop repeats less. `--flag_normalize_lip` still closes the lips first. Relative motion means
+  every part starts from the photo's pose, so the joins don't jump.
+- Fixed on the way: joining mixed 25/30 fps parts directly (concat demuxer, `-r 25` or
+  `-vf fps=25`) re-timed every frame at 25 fps and played 30 fps parts 20 % slow (6.0 s of driver
+  → 7.2 s clip). Each part is now resampled to 25 fps by time first, then joined with stream copy.
+- `kaggle/photo_to_avatar.ipynb`: **standalone** notebook (own session — LivePortrait next to the
+  worker/MuseTalk ended a session in 021). Finds the photo under `/kaggle/input`, installs
+  LivePortrait (CPU `onnxruntime` only), downloads weights, runs the script on the GPU, shows 6
+  preview frames and a download link; then the clip goes into the dataset and the worker's
+  `AVATAR_VIDEO`.
+
+## Verified
+- Script tested locally against a stand-in `inference.py` with LivePortrait's CLI and output
+  naming (`<photo>--<driver>.mp4`, photo size, driver fps): 3 parts (25/30/30 fps, 2 s each) →
+  **150 frames @ 25 fps = 6.0 s**, 612×386; `--max-seconds` trimming works. `ruff` clean.
+- LivePortrait itself on this photo was already verified in 021/022. The full GPU run is the
+  user's (scratch LivePortrait setup was wiped by a reboot; rebuilding it locally ≈ 30 min).
