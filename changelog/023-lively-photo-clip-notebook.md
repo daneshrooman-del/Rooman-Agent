@@ -28,3 +28,16 @@ it livelier and rendered on Kaggle (the 2 h CPU render was too slow).
   **150 frames @ 25 fps = 6.0 s**, 612×386; `--max-seconds` trimming works. `ruff` clean.
 - LivePortrait itself on this photo was already verified in 021/022. The full GPU run is the
   user's (scratch LivePortrait setup was wiped by a reboot; rebuilding it locally ≈ 30 min).
+
+## Follow-up: Kaggle session crashed during the photo notebook
+Symptoms: the session restarted during rendering; afterwards `{LP}` was undefined and then
+`/kaggle/working/LivePortrait` was missing — the working directory itself was gone, so the crash
+point (setup vs. render) and cause (likely RAM) are unknown.
+- Setup cell prints its step (1/3 clone, 2/3 install, 3/3 weights) so a crash can be placed.
+- Render cell now runs the script in the **background** and logs progress (`render.log`) and memory
+  every 2 s (`mem.log`) to files; it prints the photo's size and the driver clips' resolutions
+  first (a very large input would explain a RAM blow-up). New progress cell reads the logs (works
+  after a kernel restart). Preview cell is standalone.
+- Fixed before it shipped: `print(...); !cmd` on one line is invalid in IPython (`!` must start a
+  line). All cells of both Kaggle notebooks now checked with IPython's own `TransformerManager`,
+  which handles `!` lines like Kaggle does (previous checks skipped those lines).
